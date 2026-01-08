@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
  * Custom hook for audio/video recording with Voice Activity Detection
- * Provides recording controls and VAD for teleprompter scroll speed
+ * Records both video (for playback) and audio-only (for transcription)
  */
 export function useRecorder() {
     const [isRecording, setIsRecording] = useState(false);
@@ -11,12 +11,16 @@ export function useRecorder() {
     const [audioLevel, setAudioLevel] = useState(0);
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [recordedBlob, setRecordedBlob] = useState(null);
+    const [audioBlob, setAudioBlob] = useState(null); // Audio-only for transcription
 
     const mediaRecorderRef = useRef(null);
+    const audioRecorderRef = useRef(null); // Separate audio-only recorder
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
     const streamRef = useRef(null);
+    const audioStreamRef = useRef(null); // Audio-only stream
     const chunksRef = useRef([]);
+    const audioChunksRef = useRef([]); // Audio-only chunks
     const durationIntervalRef = useRef(null);
     const vadIntervalRef = useRef(null);
 
@@ -123,7 +127,6 @@ export function useRecorder() {
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     chunksRef.current.push(event.data);
-                    console.log('Recorded chunk:', event.data.size, 'bytes');
                 }
             };
 
@@ -134,11 +137,53 @@ export function useRecorder() {
             mediaRecorder.onstop = () => {
                 const finalMimeType = mediaRecorder.mimeType || 'video/webm';
                 const blob = new Blob(chunksRef.current, { type: finalMimeType });
-                console.log('Recording stopped. Total blob size:', blob.size, 'Type:', blob.type);
+                console.log('Video recording stopped. Size:', blob.size, 'bytes');
                 setRecordedBlob(blob);
             };
 
-            // Start recording - use timeslice to get chunks
+            // === AUDIO-ONLY RECORDER (for transcription - much smaller file) ===
+            const audioOnlyStream = new MediaStream(stream.getAudioTracks());
+            audioStreamRef.current = audioOnlyStream;
+            audioChunksRef.current = [];
+
+            let audioRecorder = null;
+            const audioMimeTypes = ['audio/webm', 'audio/webm;codecs=opus', 'audio/ogg', 'audio/mp4'];
+
+            for (const mimeType of audioMimeTypes) {
+                if (MediaRecorder.isTypeSupported(mimeType)) {
+                    try {
+                        audioRecorder = new MediaRecorder(audioOnlyStream, { mimeType });
+                        console.log('Audio recorder created with:', mimeType);
+                        break;
+                    } catch (e) {
+                        console.log(`Audio recorder failed with ${mimeType}`);
+                    }
+                }
+            }
+
+            if (audioRecorder) {
+                audioRecorderRef.current = audioRecorder;
+
+                audioRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunksRef.current.push(event.data);
+                    }
+                };
+
+                audioRecorder.onstop = () => {
+                    const audioMimeType = audioRecorder.mimeType || 'audio/webm';
+                    const blob = new Blob(audioChunksRef.current, { type: audioMimeType });
+                    console.log('Audio recording stopped. Size:', blob.size, 'bytes (for transcription)');
+                    setAudioBlob(blob);
+                };
+
+                audioRecorder.start(1000);
+                console.log('Audio-only recorder started');
+            } else {
+                console.warn('Could not create audio-only recorder, will use video for transcription');
+            }
+
+            // Start video recorder
             mediaRecorder.start(1000);
             console.log('MediaRecorder started successfully!');
 
@@ -193,7 +238,7 @@ export function useRecorder() {
 
     /**
      * Stop recording
-     * @returns {Promise<Blob>} Recorded media blob
+     * @returns {Promise<{videoBlob: Blob, audioBlob: Blob}>} Recorded blobs
      */
     const stopRecording = useCallback(() => {
         console.log('stopRecording called, isRecording:', isRecording);
@@ -209,11 +254,21 @@ export function useRecorder() {
                 vadIntervalRef.current = null;
             }
 
-            // Stop and cleanup stream
+            // Stop audio-only recorder first
+            if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
+                audioRecorderRef.current.stop();
+                console.log('Audio-only recorder stopped');
+            }
+
+            // Stop and cleanup streams
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => {
                     track.stop();
-                    console.log('Stopped track:', track.kind);
+                });
+            }
+            if (audioStreamRef.current) {
+                audioStreamRef.current.getTracks().forEach(track => {
+                    track.stop();
                 });
             }
 
@@ -225,13 +280,20 @@ export function useRecorder() {
 
             // If we have a media recorder that's recording, stop it and wait for data
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                console.log('Stopping MediaRecorder, state:', mediaRecorderRef.current.state);
+                console.log('Stopping MediaRecorder');
 
                 mediaRecorderRef.current.onstop = () => {
                     const mimeType = mediaRecorderRef.current.mimeType || 'video/webm';
-                    const blob = new Blob(chunksRef.current, { type: mimeType });
-                    console.log('MediaRecorder stopped, blob size:', blob.size, 'type:', blob.type);
-                    setRecordedBlob(blob);
+                    const videoBlob = new Blob(chunksRef.current, { type: mimeType });
+                    console.log('Video blob size:', videoBlob.size, 'bytes');
+                    setRecordedBlob(videoBlob);
+
+                    // Create audio blob from audio chunks
+                    const audioBlobResult = audioChunksRef.current.length > 0
+                        ? new Blob(audioChunksRef.current, { type: 'audio/webm' })
+                        : videoBlob; // Fallback to video if no audio chunks
+                    console.log('Audio blob size:', audioBlobResult.size, 'bytes');
+                    setAudioBlob(audioBlobResult);
 
                     // Reset state
                     setIsRecording(false);
@@ -239,20 +301,23 @@ export function useRecorder() {
                     setIsSpeaking(false);
                     setAudioLevel(0);
 
-                    resolve(blob);
+                    // Return audio blob for transcription (smaller than video)
+                    resolve(audioBlobResult);
                 };
 
                 mediaRecorderRef.current.stop();
             } else {
                 console.log('No active MediaRecorder, resolving with existing chunks');
 
-                // Create blob from any existing chunks
-                const blob = chunksRef.current.length > 0
+                const videoBlob = chunksRef.current.length > 0
                     ? new Blob(chunksRef.current, { type: 'video/webm' })
                     : null;
+                const audioBlobResult = audioChunksRef.current.length > 0
+                    ? new Blob(audioChunksRef.current, { type: 'audio/webm' })
+                    : videoBlob;
 
-                console.log('Created blob from chunks:', blob?.size || 0);
-                setRecordedBlob(blob);
+                setRecordedBlob(videoBlob);
+                setAudioBlob(audioBlobResult);
 
                 // Reset state
                 setIsRecording(false);
@@ -260,7 +325,7 @@ export function useRecorder() {
                 setIsSpeaking(false);
                 setAudioLevel(0);
 
-                resolve(blob);
+                resolve(audioBlobResult);
             }
         });
     }, [isRecording]);
@@ -343,6 +408,7 @@ export function useRecorder() {
         audioLevel,
         isSpeaking,
         recordedBlob,
+        audioBlob, // Audio-only for transcription (smaller)
         startRecording,
         stopRecording,
         pauseRecording,

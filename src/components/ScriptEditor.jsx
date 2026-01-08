@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGroq } from '../hooks/useGroq';
 import { estimateReadingTime } from '../utils/formatters';
 
@@ -39,7 +39,11 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
     const [duration, setDuration] = useState(2);
     const [savedScripts, setSavedScripts] = useState([]);
     const [showLibrary, setShowLibrary] = useState(false);
+    const [toast, setToast] = useState(null);
     const { generateScript, isLoading, error } = useGroq();
+
+    // Ref for script editor section
+    const scriptEditorRef = useRef(null);
 
     // Load saved scripts on mount
     useEffect(() => {
@@ -94,6 +98,15 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
     const handleLoadScript = (savedScript) => {
         onScriptChange(savedScript.content);
         setShowLibrary(false);
+
+        // Show toast notification
+        setToast({ message: `"${savedScript.title}" added to editor`, type: 'success' });
+        setTimeout(() => setToast(null), 3000);
+
+        // Scroll to script editor section after a brief delay
+        setTimeout(() => {
+            scriptEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
     };
 
     const handleDeleteScript = (id) => {
@@ -386,8 +399,37 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                 </div>
             </div>
 
+            {/* Toast Notification */}
+            {toast && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: '24px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 1100,
+                        padding: '14px 24px',
+                        borderRadius: '12px',
+                        background: toast.type === 'success'
+                            ? 'linear-gradient(135deg, #10b981, #059669)'
+                            : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                        color: 'white',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        animation: 'slideUp 0.3s ease-out'
+                    }}
+                >
+                    <span style={{ fontSize: '18px' }}>✅</span>
+                    {toast.message}
+                </div>
+            )}
+
             {/* Script Editor */}
-            <div className="glass-strong" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px' }}>
+            <div ref={scriptEditorRef} className="glass-strong" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '28px' }}>📝</span>

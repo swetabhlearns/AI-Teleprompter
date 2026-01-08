@@ -107,11 +107,18 @@ export function calculateClarityScore(metrics) {
 
 /**
  * Generate a comprehensive performance report
- * @param {object} data - Analysis data
+ * @param {object} data - Analysis data including word-level timestamps
  * @returns {object} Complete performance report
  */
 export function generatePerformanceReport(data) {
-    const { transcript, durationMs, eyeContactPercentage = 0, postureScore = 0 } = data;
+    const {
+        transcript,
+        durationMs,
+        eyeContactPercentage = 0,
+        postureScore = 0,
+        words = [],
+        stutteringReport = null
+    } = data;
 
     const wpm = calculateWPM(transcript, durationMs);
     const fillerAnalysis = detectFillerWords(transcript);
@@ -124,20 +131,35 @@ export function generatePerformanceReport(data) {
         wordCount
     });
 
-    // Overall score weighted average
+    // Factor in stuttering analysis if available
+    const fluencyScore = stutteringReport?.fluencyScore ?? 100;
+
+    // Overall score weighted average (now includes fluency)
     const overallScore = Math.round(
-        (clarityScore * 0.4) +
-        (Math.min(100, wpm / 1.5) * 0.2) +
+        (clarityScore * 0.25) +
+        (fluencyScore * 0.25) +
+        (Math.min(100, wpm / 1.5) * 0.15) +
         (eyeContactPercentage * 0.2) +
-        (postureScore * 0.2)
+        (postureScore * 0.15)
     );
+
+    // Combine recommendations from both sources
+    const baseRecommendations = generateRecommendations({
+        wpm,
+        fillerCount: fillerAnalysis.count,
+        eyeContactPercentage,
+        postureScore
+    });
+
+    const stutteringRecommendations = stutteringReport?.recommendations || [];
 
     return {
         summary: {
             overallScore,
             duration: durationMs,
             wordCount,
-            wpm
+            wpm,
+            fluencyScore
         },
         speech: {
             wpm,
@@ -145,16 +167,22 @@ export function generatePerformanceReport(data) {
             fillerWords: fillerAnalysis,
             pauses: pauseAnalysis
         },
+        // New: stuttering-specific analysis
+        fluency: stutteringReport ? {
+            score: stutteringReport.fluencyScore,
+            severity: stutteringReport.overallSeverity,
+            blocks: stutteringReport.blocks,
+            repetitions: stutteringReport.repetitions,
+            paceVariation: stutteringReport.paceVariation
+        } : null,
         presence: {
             eyeContactPercentage,
             postureScore
         },
-        recommendations: generateRecommendations({
-            wpm,
-            fillerCount: fillerAnalysis.count,
-            eyeContactPercentage,
-            postureScore
-        })
+        recommendations: [
+            ...stutteringRecommendations,
+            ...baseRecommendations.map(text => ({ icon: '💡', text, priority: 'medium' }))
+        ].slice(0, 5)
     };
 }
 

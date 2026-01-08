@@ -140,8 +140,17 @@ export function Teleprompter({
                 scrollPosRef.current += scrollDelta;
 
                 const maxScroll = contentRef.current.scrollHeight - contentRef.current.clientHeight;
-                scrollPosRef.current = Math.min(scrollPosRef.current, Math.max(0, maxScroll));
 
+                // Auto-pause when reaching the end of the script
+                if (scrollPosRef.current >= maxScroll && maxScroll > 0) {
+                    scrollPosRef.current = maxScroll;
+                    contentRef.current.scrollTop = maxScroll;
+                    setIsPaused(true); // Auto-pause at end
+                    console.log('Teleprompter reached end - auto-paused');
+                    return; // Stop the animation loop
+                }
+
+                scrollPosRef.current = Math.min(scrollPosRef.current, Math.max(0, maxScroll));
                 contentRef.current.scrollTop = scrollPosRef.current;
             }
 
@@ -171,7 +180,7 @@ export function Teleprompter({
 
     if (!script) {
         return (
-            <div className="teleprompter-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="teleprompter-overlay">
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
                     <p style={{ fontSize: '18px' }}>No script loaded</p>
                     <p style={{ fontSize: '14px', marginTop: '8px' }}>Go to Script tab to create or generate one</p>

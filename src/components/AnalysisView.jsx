@@ -143,6 +143,117 @@ export function AnalysisView({ analysis, isLoading = false }) {
                     )}
                 </div>
 
+                {/* NEW: Fluency Patterns (Stuttering Analysis) */}
+                {analysis.fluency && (
+                    <div className="glass-strong p-6">
+                        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                            🌊 Fluency Patterns
+                        </h3>
+
+                        {/* Fluency Score */}
+                        <div className="flex items-center justify-between mb-4">
+                            <span className="text-white/70">Fluency Score</span>
+                            <div className="flex items-center gap-2">
+                                <span
+                                    className="text-2xl font-bold"
+                                    style={{
+                                        color: analysis.fluency.score >= 85 ? '#10b981' :
+                                            analysis.fluency.score >= 70 ? '#22d3ee' :
+                                                analysis.fluency.score >= 50 ? '#f59e0b' : '#ef4444'
+                                    }}
+                                >
+                                    {analysis.fluency.score}
+                                </span>
+                                <span
+                                    className="text-xs px-2 py-1 rounded-full"
+                                    style={{
+                                        background: analysis.fluency.severity === 'minimal' ? 'rgba(16,185,129,0.2)' :
+                                            analysis.fluency.severity === 'mild' ? 'rgba(34,211,238,0.2)' :
+                                                analysis.fluency.severity === 'moderate' ? 'rgba(245,158,11,0.2)' :
+                                                    'rgba(239,68,68,0.2)',
+                                        color: analysis.fluency.severity === 'minimal' ? '#10b981' :
+                                            analysis.fluency.severity === 'mild' ? '#22d3ee' :
+                                                analysis.fluency.severity === 'moderate' ? '#f59e0b' : '#ef4444'
+                                    }}
+                                >
+                                    {analysis.fluency.severity}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Blocks */}
+                        <div className="mb-4 p-3 bg-white/5 rounded-xl">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-white/60 text-sm">⏸️ Blocks (Pauses)</span>
+                                <span className="text-white font-medium">
+                                    {analysis.fluency.blocks.count}
+                                </span>
+                            </div>
+                            {analysis.fluency.blocks.count > 0 && (
+                                <div className="text-xs text-white/40 mt-1">
+                                    {analysis.fluency.blocks.blocks.slice(0, 2).map((block, i) => (
+                                        <span key={i}>
+                                            {i > 0 && ' • '}
+                                            {block.duration}s before "{block.afterWord}"
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Repetitions */}
+                        <div className="mb-4 p-3 bg-white/5 rounded-xl">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-white/60 text-sm">🔄 Repetitions</span>
+                                <span className="text-white font-medium">
+                                    {analysis.fluency.repetitions.count}
+                                </span>
+                            </div>
+                            {analysis.fluency.repetitions.count > 0 && (
+                                <div className="text-xs text-white/40 mt-1">
+                                    {analysis.fluency.repetitions.repetitions.slice(0, 2).map((rep, i) => (
+                                        <span key={i}>
+                                            {i > 0 && ' • '}
+                                            "{rep.word}" ×{rep.count}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Pace Variation */}
+                        <div className="p-3 bg-white/5 rounded-xl">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-white/60 text-sm">📊 Pace</span>
+                                <span className="text-white/80 text-sm">
+                                    {analysis.fluency.paceVariation.consistency}
+                                </span>
+                            </div>
+                            {analysis.fluency.paceVariation.segments.length > 1 && (
+                                <div className="flex items-end gap-1 h-8 mt-2">
+                                    {analysis.fluency.paceVariation.segments.map((seg, i) => (
+                                        <div
+                                            key={i}
+                                            className="flex-1 rounded-t"
+                                            style={{
+                                                height: `${Math.min(100, (seg.wpm / 180) * 100)}%`,
+                                                minHeight: '4px',
+                                                background: seg.wpm > 150 ? '#ef4444' :
+                                                    seg.wpm > 120 ? '#22d3ee' :
+                                                        seg.wpm > 80 ? '#10b981' : '#f59e0b'
+                                            }}
+                                            title={`${seg.wpm} WPM at ${seg.startTime}s`}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                            <div className="text-xs text-white/40 mt-2 text-center">
+                                Avg: {analysis.fluency.paceVariation.averageWpm} WPM
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Presence Metrics */}
                 <div className="glass-strong p-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -222,15 +333,27 @@ export function AnalysisView({ analysis, isLoading = false }) {
                     </h3>
 
                     <ul className="space-y-3">
-                        {analysis.recommendations.map((rec, index) => (
-                            <li
-                                key={index}
-                                className="flex items-start gap-3 p-3 bg-white/5 rounded-xl"
-                            >
-                                <span className="text-indigo-400 mt-0.5">→</span>
-                                <span className="text-white/80">{rec}</span>
-                            </li>
-                        ))}
+                        {analysis.recommendations.map((rec, index) => {
+                            // Handle both string and object recommendations
+                            const icon = typeof rec === 'object' ? rec.icon : '→';
+                            const text = typeof rec === 'object' ? rec.text : rec;
+                            const priority = typeof rec === 'object' ? rec.priority : 'medium';
+
+                            return (
+                                <li
+                                    key={index}
+                                    className="flex items-start gap-3 p-3 rounded-xl"
+                                    style={{
+                                        background: priority === 'high' ? 'rgba(239,68,68,0.1)' :
+                                            priority === 'low' ? 'rgba(16,185,129,0.1)' :
+                                                'rgba(255,255,255,0.05)'
+                                    }}
+                                >
+                                    <span className="text-lg mt-0.5">{icon}</span>
+                                    <span className="text-white/80">{text}</span>
+                                </li>
+                            );
+                        })}
                     </ul>
                 </div>
             )}

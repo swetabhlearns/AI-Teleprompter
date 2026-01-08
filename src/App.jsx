@@ -4,10 +4,16 @@ import Teleprompter from './components/Teleprompter';
 import ScriptEditor from './components/ScriptEditor';
 import FeedbackOverlay from './components/FeedbackOverlay';
 import AnalysisView from './components/AnalysisView';
+import InterviewSetup from './components/InterviewSetup';
+import InterviewSession from './components/InterviewSession';
+import InterviewResults from './components/InterviewResults';
 import { useMediaPipe } from './hooks/useMediaPipe';
 import { useRecorder } from './hooks/useRecorder';
 import { useGroq } from './hooks/useGroq';
+import { useInterview, INTERVIEW_STATES } from './hooks/useInterview';
+import { useKokoroTTS } from './hooks/useKokoroTTS';
 import { generatePerformanceReport } from './utils/analysisEngine';
+import { generateStutteringReport } from './utils/stutteringAnalyzer';
 import { formatDuration } from './utils/formatters';
 
 function App() {
@@ -57,11 +63,22 @@ function App() {
     duration,
     isSpeaking,
     audioLevel,
+    audioBlob, // Audio-only for transcription
     startRecording,
     stopRecording
   } = useRecorder();
 
-  const { transcribeAudio, isLoading: isTranscribing } = useGroq();
+  const { transcribeAudio, generateInterviewQuestions, evaluateAnswer, isLoading: isTranscribing } = useGroq();
+
+  // Kokoro TTS for human-like interviewer voice
+  const kokoroTTS = useKokoroTTS();
+
+  // Interview hook with Kokoro TTS
+  const interview = useInterview({
+    speak: kokoroTTS.speak,
+    stop: kokoroTTS.stop,
+    isSpeaking: kokoroTTS.isSpeaking
+  });
 
   // Video element ref for MediaPipe processing
   const videoRef = useRef(null);
@@ -72,9 +89,9 @@ function App() {
     setStream(newStream);
   }, []);
 
-  // Set video ref when practice tab is active
+  // Set video ref when practice or interview tab is active
   useEffect(() => {
-    if (activeTab === 'practice') {
+    if (activeTab === 'practice' || (activeTab === 'interview' && interview.state !== INTERVIEW_STATES.IDLE && interview.state !== INTERVIEW_STATES.SETUP)) {
       const timer = setTimeout(() => {
         const videoEl = document.querySelector('.camera-video');
         if (videoEl) {
@@ -83,7 +100,7 @@ function App() {
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [activeTab]);
+  }, [activeTab, interview.state]);
 
   // MediaPipe processing loop
   const lastStateUpdateRef = useRef(0);
@@ -207,7 +224,7 @@ function App() {
 
   // Start analysis (user-triggered)
   const handleStartAnalysis = async () => {
-    if (!recordingResult) {
+    if (!recordingResult && !audioBlob) {
       console.error('No recording to analyze');
       return;
     }
@@ -216,26 +233,40 @@ function App() {
     setActiveTab('analysis');
 
     try {
-      let transcript = '';
+      let transcriptData = { text: '', words: [], segments: [] };
 
-      // Transcribe if we have audio
-      if (recordingResult.size > 0) {
-        console.log('Starting transcription... Blob size:', recordingResult.size, 'Type:', recordingResult.type);
+      // Use audioBlob (smaller, audio-only) for transcription instead of video
+      const blobToTranscribe = audioBlob || recordingResult;
+
+      if (blobToTranscribe && blobToTranscribe.size > 0) {
+        console.log('Starting transcription...');
+        console.log('Blob size:', blobToTranscribe.size, 'bytes');
+        console.log('Blob type:', blobToTranscribe.type);
 
         try {
-          transcript = await transcribeAudio(recordingResult);
-          console.log('Transcription successful:', transcript);
+          transcriptData = await transcribeAudio(blobToTranscribe);
+          console.log('Transcription successful:', transcriptData.text);
+          console.log('Word timestamps received:', transcriptData.words?.length || 0);
         } catch (err) {
           console.error('Transcription failed:', err);
-          // Continue with empty transcript
+          // Continue with empty data
         }
       } else {
         console.warn('No audio data to transcribe');
       }
 
-      // Generate performance report
+      // Generate stuttering analysis from word-level data
+      const stutteringReport = transcriptData.words?.length > 0
+        ? generateStutteringReport(transcriptData.words)
+        : null;
+
+      console.log('Stuttering Analysis:', stutteringReport);
+
+      // Generate comprehensive performance report
       const report = generatePerformanceReport({
-        transcript: transcript || '',
+        transcript: transcriptData.text || '',
+        words: transcriptData.words || [],
+        stutteringReport,
         durationMs: sessionDuration,
         eyeContactPercentage: savedMetrics?.eyeContactPercentage || 0,
         postureScore: savedMetrics?.avgPosture || 0
@@ -251,15 +282,35 @@ function App() {
     }
   };
 
-  // Skip analysis and go back
   const handleSkipAnalysis = () => {
     setRecordingResult(null);
     setHasRecording(false);
     setActiveTab('script');
   };
 
+  // Interview handlers
+  const handleStartInterview = async () => {
+    try {
+      const questions = await generateInterviewQuestions(interview.config);
+      interview.startInterview(questions);
+    } catch (err) {
+      console.error('Failed to start interview:', err);
+    }
+  };
+
+  const handleInterviewRestart = () => {
+    interview.resetInterview();
+    interview.setState(INTERVIEW_STATES.SETUP);
+  };
+
+  const handleInterviewGoHome = () => {
+    interview.resetInterview();
+    setActiveTab('script');
+  };
+
   const tabs = [
     { id: 'script', label: '📝 Script' },
+    { id: 'interview', label: '🎤 Interview' },
     { id: 'practice', label: '🎬 Practice' },
     { id: 'analysis', label: '📊 Analysis' }
   ];
@@ -325,6 +376,58 @@ function App() {
               onScriptChange={setScript}
               onStartPractice={handleStartPractice}
             />
+          </div>
+        )}
+
+        {/* Interview Tab */}
+        {activeTab === 'interview' && (
+          <div style={{ height: 'calc(100vh - 140px)' }}>
+            {/* Setup Phase */}
+            {(interview.state === INTERVIEW_STATES.IDLE || interview.state === INTERVIEW_STATES.SETUP) && (
+              <InterviewSetup
+                config={interview.config}
+                setConfig={interview.setConfig}
+                onStartInterview={handleStartInterview}
+                isLoading={isTranscribing}
+                ttsStatus={{
+                  isLoading: kokoroTTS.isLoading,
+                  isReady: kokoroTTS.isReady,
+                  usesFallback: kokoroTTS.usesFallback
+                }}
+              />
+            )}
+
+            {/* Active Interview */}
+            {(interview.state !== INTERVIEW_STATES.IDLE &&
+              interview.state !== INTERVIEW_STATES.SETUP &&
+              interview.state !== INTERVIEW_STATES.COMPLETE) && (
+                <InterviewSession
+                  interview={interview}
+                  stream={stream}
+                  onStreamReady={handleStreamReady}
+                  mediaPipeReady={mediaPipeReady}
+                  mediaPipeLoading={mediaPipeLoading}
+                  currentEyeContact={currentEyeContact}
+                  currentPosture={currentPosture}
+                  isRecording={isRecording}
+                  onStartRecording={startRecording}
+                  onStopRecording={stopRecording}
+                  onTranscribe={transcribeAudio}
+                  onEvaluate={evaluateAnswer}
+                  isProcessing={isTranscribing}
+                  isGeneratingAudio={kokoroTTS.isGenerating}
+                  onPregenerate={kokoroTTS.pregenerate}
+                />
+              )}
+
+            {/* Results */}
+            {interview.state === INTERVIEW_STATES.COMPLETE && (
+              <InterviewResults
+                results={interview.getResults()}
+                onRestart={handleInterviewRestart}
+                onGoHome={handleInterviewGoHome}
+              />
+            )}
           </div>
         )}
 
