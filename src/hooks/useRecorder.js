@@ -244,6 +244,9 @@ export function useRecorder() {
         console.log('stopRecording called, isRecording:', isRecording);
 
         return new Promise((resolve) => {
+            // Capture final duration before clearing intervals - CRITICAL FIX
+            const finalDuration = duration;
+
             // Clear intervals
             if (durationIntervalRef.current) {
                 clearInterval(durationIntervalRef.current);
@@ -278,6 +281,25 @@ export function useRecorder() {
                 audioContextRef.current = null;
             }
 
+            // Helper to resolve promise with all data
+            const resolveWithData = (videoBlob, audioBlob) => {
+                setRecordedBlob(videoBlob);
+                setAudioBlob(audioBlob);
+
+                // Reset state
+                setIsRecording(false);
+                setIsPaused(false);
+                setIsSpeaking(false);
+                setAudioLevel(0);
+                setDuration(0);
+
+                resolve({
+                    blob: audioBlob,
+                    videoBlob: videoBlob,
+                    duration: finalDuration
+                });
+            };
+
             // If we have a media recorder that's recording, stop it and wait for data
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                 console.log('Stopping MediaRecorder');
@@ -286,23 +308,14 @@ export function useRecorder() {
                     const mimeType = mediaRecorderRef.current.mimeType || 'video/webm';
                     const videoBlob = new Blob(chunksRef.current, { type: mimeType });
                     console.log('Video blob size:', videoBlob.size, 'bytes');
-                    setRecordedBlob(videoBlob);
 
                     // Create audio blob from audio chunks
                     const audioBlobResult = audioChunksRef.current.length > 0
                         ? new Blob(audioChunksRef.current, { type: 'audio/webm' })
                         : videoBlob; // Fallback to video if no audio chunks
                     console.log('Audio blob size:', audioBlobResult.size, 'bytes');
-                    setAudioBlob(audioBlobResult);
 
-                    // Reset state
-                    setIsRecording(false);
-                    setIsPaused(false);
-                    setIsSpeaking(false);
-                    setAudioLevel(0);
-
-                    // Return audio blob for transcription (smaller than video)
-                    resolve(audioBlobResult);
+                    resolveWithData(videoBlob, audioBlobResult);
                 };
 
                 mediaRecorderRef.current.stop();
@@ -316,19 +329,10 @@ export function useRecorder() {
                     ? new Blob(audioChunksRef.current, { type: 'audio/webm' })
                     : videoBlob;
 
-                setRecordedBlob(videoBlob);
-                setAudioBlob(audioBlobResult);
-
-                // Reset state
-                setIsRecording(false);
-                setIsPaused(false);
-                setIsSpeaking(false);
-                setAudioLevel(0);
-
-                resolve(audioBlobResult);
+                resolveWithData(videoBlob, audioBlobResult);
             }
         });
-    }, [isRecording]);
+    }, [isRecording, duration]);
 
     /**
      * Pause recording

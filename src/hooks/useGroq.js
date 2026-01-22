@@ -457,12 +457,92 @@ Respond in JSON:
         }
     }, []);
 
+    /**
+     * Generate extempore/GD topics
+     * @param {string} category - Topic category
+     */
+    const generateExtemporeTopics = useCallback(async (category = 'general') => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const prompt = `Generate 4 thought-provoking debate or extempore speech topics.
+Category: ${category} (e.g. general, technology, social, india, business)
+
+Topics should be:
+- Open-ended conversational questions
+- Relevant to modern context
+- Easy to speak on for 2-3 minutes
+- Mix of serious and interesting
+
+Examples:
+- "Is remote work the future of employment?"
+- "Should social media usage be regulated for minors?"
+- "Is India ready for electric vehicles?"
+
+Respond in JSON format:
+{
+  "topics": [
+    "Topic 1 text",
+    "Topic 2 text",
+    "Topic 3 text",
+    "Topic 4 text"
+  ]
+}`;
+
+            const completion = await groq.chat.completions.create({
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a creative topic generator for speech practice.'
+                    },
+                    {
+                        role: 'user',
+                        content: prompt
+                    }
+                ],
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0.8,
+                max_tokens: 500,
+            });
+
+            const response = completion.choices[0]?.message?.content || '';
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                return parsed.topics || [];
+            }
+
+            // Fallback topics if parsing fails
+            return [
+                "Is artificial intelligence a threat to creativity?",
+                "The impact of social media on mental health",
+                "Sustainable living: Fad or necessity?",
+                "The future of education in a digital world"
+            ];
+
+        } catch (err) {
+            console.error('Topic generation error:', err);
+            setError(err.message || 'Failed to generate topics');
+            return [
+                "Is artificial intelligence a threat to creativity?",
+                "The impact of social media on mental health",
+                "Sustainable living: Fad or necessity?",
+                "The future of education in a digital world"
+            ];
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
     return {
         generateScript,
         transcribeAudio,
         analyzePerformance,
         generateInterviewQuestions,
         evaluateAnswer,
+        generateExtemporeTopics,
         isLoading,
         error
     };

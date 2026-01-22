@@ -7,6 +7,7 @@ import AnalysisView from './components/AnalysisView';
 import InterviewSetup from './components/InterviewSetup';
 import InterviewSession from './components/InterviewSession';
 import InterviewResults from './components/InterviewResults';
+import ExtemporePractice from './components/ExtemporePractice';
 import { useMediaPipe } from './hooks/useMediaPipe';
 import { useRecorder } from './hooks/useRecorder';
 import { useGroq } from './hooks/useGroq';
@@ -68,7 +69,7 @@ function App() {
     stopRecording
   } = useRecorder();
 
-  const { transcribeAudio, generateInterviewQuestions, evaluateAnswer, isLoading: isTranscribing } = useGroq();
+  const { transcribeAudio, generateInterviewQuestions, evaluateAnswer, generateExtemporeTopics, isLoading: isTranscribing } = useGroq();
 
   // Kokoro TTS for human-like interviewer voice
   const kokoroTTS = useKokoroTTS();
@@ -91,7 +92,7 @@ function App() {
 
   // Set video ref when practice or interview tab is active
   useEffect(() => {
-    if (activeTab === 'practice' || (activeTab === 'interview' && interview.state !== INTERVIEW_STATES.IDLE && interview.state !== INTERVIEW_STATES.SETUP)) {
+    if (activeTab === 'practice' || activeTab === 'extempore' || (activeTab === 'interview' && interview.state !== INTERVIEW_STATES.IDLE && interview.state !== INTERVIEW_STATES.SETUP)) {
       const timer = setTimeout(() => {
         const videoEl = document.querySelector('.camera-video');
         if (videoEl) {
@@ -190,10 +191,15 @@ function App() {
     setIsPracticing(false);
 
     try {
-      const recordedBlob = await stopRecording();
+      // Use the returned object from stopRecording (now contains duration)
+      const result = await stopRecording();
 
-      // Save the current duration
-      setSessionDuration(duration);
+      // Handle both new object structure and potential legacy/fallback blob
+      const recordedBlob = result.blob || result;
+      const finalDuration = result.duration || duration;
+
+      // Save the current duration using the reliable return value
+      setSessionDuration(finalDuration);
 
       // Calculate and save metrics
       const eyeContactPercentage = metricsRef.current.totalFrames > 0
@@ -209,7 +215,8 @@ function App() {
         eyeContactFrames: metricsRef.current.eyeContactFrames,
         eyeContactPercentage,
         avgPosture,
-        blobSize: recordedBlob?.size || 0
+        blobSize: recordedBlob?.size || 0,
+        finalDuration
       });
 
       // Save for later analysis
@@ -217,14 +224,42 @@ function App() {
       setRecordingResult(recordedBlob);
       setHasRecording(true); // Always set to true after stopping
 
+      return { blob: recordedBlob, duration: finalDuration };
+
     } catch (err) {
       console.error('Stop recording failed:', err);
+      return null;
+    }
+  };
+
+  // Start Extempore session (similar to practice but keeps tab)
+  const handleStartExtempore = () => {
+    setRecordingResult(null);
+    setHasRecording(false);
+    setAnalysis(null);
+    setSavedMetrics(null);
+
+    metricsRef.current = {
+      eyeContactFrames: 0,
+      totalFrames: 0,
+      postureScores: []
+    };
+
+    setCurrentEyeContact(null);
+    setCurrentPosture(null);
+
+    setIsPracticing(true);
+    if (stream) {
+      startRecording(stream);
     }
   };
 
   // Start analysis (user-triggered)
-  const handleStartAnalysis = async () => {
-    if (!recordingResult && !audioBlob) {
+  const handleStartAnalysis = async (directBlob = null, directDuration = 0) => {
+    // Prioritize direct blob (from immediate stop), then stored result, then hook audio
+    const sourceBlob = directBlob || recordingResult || audioBlob;
+
+    if (!sourceBlob && !recordingResult && !audioBlob) {
       console.error('No recording to analyze');
       return;
     }
@@ -235,24 +270,19 @@ function App() {
     try {
       let transcriptData = { text: '', words: [], segments: [] };
 
-      // Use audioBlob (smaller, audio-only) for transcription instead of video
-      const blobToTranscribe = audioBlob || recordingResult;
+      // Use sourceBlob (or fallback) for transcription
+      const blobToTranscribe = sourceBlob;
 
       if (blobToTranscribe && blobToTranscribe.size > 0) {
         console.log('Starting transcription...');
         console.log('Blob size:', blobToTranscribe.size, 'bytes');
-        console.log('Blob type:', blobToTranscribe.type);
 
         try {
           transcriptData = await transcribeAudio(blobToTranscribe);
           console.log('Transcription successful:', transcriptData.text);
-          console.log('Word timestamps received:', transcriptData.words?.length || 0);
         } catch (err) {
           console.error('Transcription failed:', err);
-          // Continue with empty data
         }
-      } else {
-        console.warn('No audio data to transcribe');
       }
 
       // Generate stuttering analysis from word-level data
@@ -260,14 +290,16 @@ function App() {
         ? generateStutteringReport(transcriptData.words)
         : null;
 
-      console.log('Stuttering Analysis:', stutteringReport);
+      // Use direct duration if provided, otherwise fallback to state or 0
+      // This fixes the race condition where state hasn't updated yet
+      const finalDuration = directDuration || sessionDuration || 0;
 
       // Generate comprehensive performance report
       const report = generatePerformanceReport({
         transcript: transcriptData.text || '',
         words: transcriptData.words || [],
         stutteringReport,
-        durationMs: sessionDuration,
+        durationMs: finalDuration,
         eyeContactPercentage: savedMetrics?.eyeContactPercentage || 0,
         postureScore: savedMetrics?.avgPosture || 0
       });
@@ -310,6 +342,7 @@ function App() {
 
   const tabs = [
     { id: 'script', label: '📝 Script' },
+    { id: 'extempore', label: '💬 Extempore' },
     { id: 'interview', label: '🎤 Interview' },
     { id: 'practice', label: '🎬 Practice' },
     { id: 'analysis', label: '📊 Analysis' }
@@ -338,7 +371,7 @@ function App() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`tab ${activeTab === tab.id ? 'active' : ''}`}
-                disabled={isPracticing && tab.id !== 'practice'}
+                disabled={isPracticing && tab.id !== activeTab}
               >
                 {tab.label}
               </button>
@@ -428,6 +461,27 @@ function App() {
                 onGoHome={handleInterviewGoHome}
               />
             )}
+          </div>
+        )}
+
+        {/* Extempore Tab */}
+        {activeTab === 'extempore' && (
+          <div style={{ height: 'calc(100vh - 140px)' }}>
+            <ExtemporePractice
+              stream={stream}
+              onStreamReady={handleStreamReady}
+              mediaPipeReady={mediaPipeReady}
+              mediaPipeLoading={mediaPipeLoading}
+              currentEyeContact={currentEyeContact}
+              currentPosture={currentPosture}
+              isRecording={isRecording}
+              onStartRecording={handleStartExtempore}
+              onStopRecording={handleStopPractice}
+              onTranscribe={transcribeAudio}
+              onAnalyze={handleStartAnalysis}
+              generateTopics={generateExtemporeTopics}
+              isLoading={isTranscribing}
+            />
           </div>
         )}
 
