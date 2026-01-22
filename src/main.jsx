@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import './index.css'
 import App from './App.jsx'
 
@@ -14,6 +15,7 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <PostHogProvider client={posthog}>
       <App />
+      <SpeedInsights />
     </PostHogProvider>
   </StrictMode>,
 )
