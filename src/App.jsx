@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { usePostHog } from 'posthog-js/react';
 import CameraView from './components/CameraView';
 import Teleprompter from './components/Teleprompter';
 import ScriptEditor from './components/ScriptEditor';
@@ -18,8 +19,17 @@ import { generateStutteringReport } from './utils/stutteringAnalyzer';
 import { formatDuration } from './utils/formatters';
 
 function App() {
+  const posthog = usePostHog();
+
   // Tab navigation
   const [activeTab, setActiveTab] = useState('script');
+
+  // Track tab changes
+  useEffect(() => {
+    if (posthog) {
+      posthog.capture('tab_changed', { tab: activeTab });
+    }
+  }, [activeTab, posthog]);
 
   // Script state
   const [script, setScript] = useState('');
@@ -156,6 +166,9 @@ function App() {
   const handleStartPractice = async () => {
     setActiveTab('practice');
     setRecordingResult(null);
+
+    if (posthog) posthog.capture('practice_started');
+
     setHasRecording(false);
     setAnalysis(null);
     setSavedMetrics(null);
@@ -224,6 +237,14 @@ function App() {
       setRecordingResult(recordedBlob);
       setHasRecording(true); // Always set to true after stopping
 
+      if (posthog) {
+        posthog.capture('practice_stopped', {
+          duration: finalDuration,
+          eyeContact: eyeContactPercentage,
+          posture: avgPosture
+        });
+      }
+
       return { blob: recordedBlob, duration: finalDuration };
 
     } catch (err) {
@@ -234,6 +255,8 @@ function App() {
 
   // Start Extempore session (similar to practice but keeps tab)
   const handleStartExtempore = () => {
+    if (posthog) posthog.capture('extempore_started');
+
     setRecordingResult(null);
     setHasRecording(false);
     setAnalysis(null);
@@ -322,6 +345,8 @@ function App() {
 
   // Interview handlers
   const handleStartInterview = async () => {
+    if (posthog) posthog.capture('interview_started', { config: interview.config });
+
     try {
       const questions = await generateInterviewQuestions(interview.config);
       interview.startInterview(questions);
