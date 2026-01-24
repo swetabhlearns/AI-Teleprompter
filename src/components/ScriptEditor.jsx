@@ -69,6 +69,14 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
         if (!topic.trim()) return;
 
         try {
+            if (window.posthog) {
+                window.posthog.capture('script_generated', {
+                    topic_length: topic.length,
+                    tone,
+                    difficulty,
+                    duration_target: duration
+                });
+            }
             const generatedScript = await generateScript(topic, tone, duration * 60, difficulty);
             onScriptChange(generatedScript);
         } catch (err) {
@@ -81,6 +89,12 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
 
         const title = prompt('Enter a name for this script:', topic || 'Untitled Script');
         if (!title) return;
+
+        if (window.posthog) {
+            window.posthog.capture('script_saved', {
+                word_count: script.trim().split(/\s+/).filter(w => w).length
+            });
+        }
 
         const newScript = {
             id: Date.now(),

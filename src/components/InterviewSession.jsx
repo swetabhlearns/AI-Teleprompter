@@ -67,6 +67,13 @@ export function InterviewSession({
         // Transcribe the answer
         const answer = submitAnswer('Processing...');
 
+        if (window.posthog) {
+            window.posthog.capture('interview_answer_submitted', {
+                category: currentQuestion?.category,
+                duration: answer.duration
+            });
+        }
+
         try {
             const transcription = await onTranscribe(audioBlob);
             answer.transcript = transcription.text || '[No speech detected]';
@@ -302,7 +309,10 @@ export function InterviewSession({
                     <div style={{ display: 'flex', gap: '12px' }}>
                         {/* Skip Button */}
                         <button
-                            onClick={skipQuestion}
+                            onClick={() => {
+                                if (window.posthog) window.posthog.capture('interview_question_skipped');
+                                skipQuestion();
+                            }}
                             disabled={state === INTERVIEW_STATES.EVALUATING || isProcessing || isGeneratingAudio}
                             className="btn btn-secondary"
                         >

@@ -330,6 +330,17 @@ function App() {
       console.log('Performance Report:', report);
       setAnalysis(report);
 
+      if (posthog) {
+        posthog.capture('analysis_completed', {
+          wpm: report.summary.wpm,
+          overall_score: report.summary.overallScore,
+          filler_count: report.speech.fillerWords.count,
+          fluency_score: report.fluency ? report.fluency.score : null,
+          duration: report.summary.duration,
+          word_count: report.summary.wordCount
+        });
+      }
+
     } catch (err) {
       console.error('Analysis failed:', err);
     } finally {

@@ -79,6 +79,9 @@ function ExtemporePractice({
     const handleGenerateTopics = async (category) => {
         setIsGeneratingTopics(true);
         try {
+            if (window.posthog) {
+                window.posthog.capture('extempore_topics_generated', { category });
+            }
             const newTopics = await generateTopics(category);
             setTopics(newTopics || []);
         } catch (error) {
@@ -98,6 +101,11 @@ function ExtemporePractice({
     };
 
     const handleSelectTopic = (topic) => {
+        if (window.posthog) {
+            window.posthog.capture('extempore_topic_selected', {
+                topic_length: topic.length
+            });
+        }
         stopTTS();
         setCurrentTopic(topic);
         setState(EXT_STATES.PRACTICE);
@@ -124,16 +132,28 @@ function ExtemporePractice({
 
     // Review Actions
     const handleDiscard = () => {
+        if (window.posthog) {
+            window.posthog.capture('extempore_review_action', { action: 'discard' });
+        }
         setPendingData(null);
         setState(EXT_STATES.TOPIC_SELECTION);
     };
 
     const handleRetry = () => {
+        if (window.posthog) {
+            window.posthog.capture('extempore_review_action', { action: 'retry' });
+        }
         setPendingData(null);
         setState(EXT_STATES.PRACTICE);
     };
 
     const handleProceedToAnalysis = () => {
+        if (window.posthog) {
+            window.posthog.capture('extempore_review_action', {
+                action: 'analyze',
+                duration: pendingData?.duration
+            });
+        }
         if (pendingData) {
             setState(EXT_STATES.ANALYSIS);
             onAnalyze(pendingData.blob, pendingData.duration);
@@ -174,8 +194,8 @@ function ExtemporePractice({
                                         handleGenerateTopics(cat.id);
                                     }}
                                     className={`px-8 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${selectedCategory === cat.id
-                                            ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
-                                            : 'text-gray-400 hover:text-white hover:bg-white/10'
+                                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
+                                        : 'text-gray-400 hover:text-white hover:bg-white/10'
                                         }`}
                                 >
                                     {cat.label}
@@ -264,10 +284,10 @@ function ExtemporePractice({
                     {/* Timer Overlay */}
                     <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
                         <div className={`px-4 py-2 rounded-full backdrop-blur-md border ${isGoalMet
-                                ? 'bg-green-500/20 border-green-500/50 text-green-400'
-                                : isRecording
-                                    ? 'bg-red-500/20 border-red-500/50 text-red-400'
-                                    : 'bg-black/40 border-white/20 text-white'
+                            ? 'bg-green-500/20 border-green-500/50 text-green-400'
+                            : isRecording
+                                ? 'bg-red-500/20 border-red-500/50 text-red-400'
+                                : 'bg-black/40 border-white/20 text-white'
                             }`}>
                             <span className="font-mono text-2xl font-bold">
                                 {formatDuration(elapsedTime)}
