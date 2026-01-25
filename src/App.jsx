@@ -279,11 +279,25 @@ function App() {
 
   // Start analysis (user-triggered)
   const handleStartAnalysis = async (directBlob = null, directDuration = 0) => {
-    // Prioritize direct blob (from immediate stop), then stored result, then hook audio
-    const sourceBlob = directBlob || recordingResult || audioBlob;
+    // FIX: When called as onClick handler, first arg is the click event, not a blob!
+    // Check if directBlob is actually a Blob before using it
+    const isValidBlob = directBlob instanceof Blob;
+    const actualDirectBlob = isValidBlob ? directBlob : null;
 
-    if (!sourceBlob && !recordingResult && !audioBlob) {
-      console.error('No recording to analyze');
+    console.log('=== handleStartAnalysis CALLED ===');
+    console.log('directBlob raw:', directBlob);
+    console.log('Is valid Blob?:', isValidBlob);
+    console.log('actualDirectBlob:', actualDirectBlob);
+    console.log('directDuration:', directDuration);
+    console.log('recordingResult:', recordingResult?.size, 'bytes');
+    console.log('audioBlob from hook:', audioBlob?.size, 'bytes');
+
+    // Prioritize: direct blob (if valid) → stored recordingResult → hook audioBlob
+    const sourceBlob = actualDirectBlob || recordingResult || audioBlob;
+    console.log('Final sourceBlob size:', sourceBlob?.size, 'bytes');
+
+    if (!sourceBlob) {
+      console.error('No recording to analyze - all sources are null/undefined');
       return;
     }
 
@@ -299,13 +313,25 @@ function App() {
       if (blobToTranscribe && blobToTranscribe.size > 0) {
         console.log('Starting transcription...');
         console.log('Blob size:', blobToTranscribe.size, 'bytes');
+        console.log('Blob type:', blobToTranscribe.type);
 
         try {
+          setIsAnalyzing(true); // Ensure loading state is set
           transcriptData = await transcribeAudio(blobToTranscribe);
           console.log('Transcription successful:', transcriptData.text);
         } catch (err) {
           console.error('Transcription failed:', err);
+          // Don't swallow error, let the UI know
+          setAnalysis(null);
+          setIsAnalyzing(false);
+          // Could show a toast here if we had one
+          return;
         }
+      } else {
+        console.error('CRITICAL: Recording blob is empty or missing. Skipping transcription.');
+        console.log('Blob object:', blobToTranscribe);
+        // Prevent generating an empty report if we have no data
+        return;
       }
 
       // Generate stuttering analysis from word-level data

@@ -161,7 +161,16 @@ Output plain text script only. No markdown.`;
         }
 
         try {
-            const audioFile = new File([audioBlob], 'recording.webm', {
+            // Determine correct file extension based on blob type
+            // Groq/Whisper can be picky about extensions matching the actual container format
+            let extension = 'webm'; // Default
+            if (audioBlob.type.includes('mp4')) extension = 'mp4';
+            else if (audioBlob.type.includes('ogg')) extension = 'ogg';
+            else if (audioBlob.type.includes('wav')) extension = 'wav';
+
+            console.log(`Using extension .${extension} for blob type: ${audioBlob.type}`);
+
+            const audioFile = new File([audioBlob], `recording.${extension}`, {
                 type: audioBlob.type || 'audio/webm'
             });
 
@@ -174,22 +183,29 @@ Output plain text script only. No markdown.`;
                 response_format: 'verbose_json'
             });
 
-            console.log('=== Transcription Success (Verbose) ===');
-            console.log('Full response:', transcription);
-            console.log('Text:', transcription.text);
-            console.log('Words:', transcription.words);
-            console.log('Segments:', transcription.segments);
+            console.log('=== Transcription Response ===');
+            console.log('Full object keys:', Object.keys(transcription));
+            console.log('Text length:', transcription.text?.length);
+            console.log('Words array length:', transcription.words?.length);
+            console.log('Segments array length:', transcription.segments?.length);
+
+            if (transcription.error) {
+                console.error('Groq API returned error inside 200 response:', transcription.error);
+            }
 
             // Groq returns words directly in verbose_json mode
             let words = transcription.words || [];
 
             // If no words array but we have segments, try to extract timing from segments
             if (words.length === 0 && transcription.segments?.length > 0) {
-                console.log('No words array, extracting from segments...');
+                console.log('No words array found. Attempting extraction from segments...');
                 words = extractWordsFromSegments(transcription.segments);
+                console.log(`Extracted ${words.length} words from segments.`);
+            } else if (words.length === 0) {
+                console.warn('CRITICAL: No words and no segments found in transcription response!');
             }
 
-            console.log('Words count:', words.length);
+            console.log('Final words count for analysis:', words.length);
 
             // Return structured data for stuttering analysis
             return {
@@ -200,8 +216,11 @@ Output plain text script only. No markdown.`;
             };
         } catch (err) {
             console.error('=== Groq Transcription Error ===');
-            console.error('Error:', err.message);
-            console.error('Full error:', err);
+            console.error('Error name:', err.name);
+            console.error('Error message:', err.message);
+            if (err.response) {
+                console.error('Error response data:', await err.response.json().catch(() => 'No JSON'));
+            }
             setError(err.message || 'Failed to transcribe audio');
             throw err;
         } finally {

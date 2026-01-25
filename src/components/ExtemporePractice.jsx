@@ -117,14 +117,20 @@ function ExtemporePractice({
     };
 
     const handleStopPractice = async () => {
+        console.log('=== ExtemporePractice handleStopPractice ===');
         // Stop recording and get the blob/result immediately
         const result = await onStopRecording();
+        console.log('Result from onStopRecording:', result);
+        console.log('result.blob:', result?.blob);
+        console.log('result.blob size:', result?.blob?.size);
 
         // Normalize result
         const data = {
             blob: result?.blob || result,
             duration: result?.duration || 0
         };
+        console.log('Normalized pendingData:', data);
+        console.log('pendingData.blob size:', data.blob?.size);
 
         setPendingData(data);
         setState(EXT_STATES.REVIEW);
@@ -148,6 +154,12 @@ function ExtemporePractice({
     };
 
     const handleProceedToAnalysis = () => {
+        console.log('=== handleProceedToAnalysis CALLED ===');
+        console.log('pendingData:', pendingData);
+        console.log('pendingData.blob:', pendingData?.blob);
+        console.log('pendingData.blob size:', pendingData?.blob?.size);
+        console.log('pendingData.duration:', pendingData?.duration);
+
         if (window.posthog) {
             window.posthog.capture('extempore_review_action', {
                 action: 'analyze',
@@ -155,8 +167,11 @@ function ExtemporePractice({
             });
         }
         if (pendingData) {
+            console.log('Calling onAnalyze with blob size:', pendingData.blob?.size);
             setState(EXT_STATES.ANALYSIS);
             onAnalyze(pendingData.blob, pendingData.duration);
+        } else {
+            console.error('NO PENDING DATA - cannot proceed to analysis!');
         }
     };
 
