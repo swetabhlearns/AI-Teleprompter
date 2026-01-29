@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import posthog from 'posthog-js'
 import { PostHogProvider } from 'posthog-js/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
+import { SessionProvider } from './contexts/SessionContext'
 import './index.css'
 import App from './App.jsx'
 
@@ -14,8 +15,10 @@ posthog.init(import.meta.env.VITE_POSTHOG_KEY || 'dummy_key', {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <PostHogProvider client={posthog}>
-      <App />
-      <SpeedInsights />
+      <SessionProvider>
+        <App />
+        <SpeedInsights />
+      </SessionProvider>
     </PostHogProvider>
   </StrictMode>,
 )

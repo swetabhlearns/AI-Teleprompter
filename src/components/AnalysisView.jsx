@@ -14,6 +14,34 @@ export function AnalysisView({ analysis, isLoading = false }) {
         return analysis?.summary?.overallScore ? formatScore(analysis.summary.overallScore) : null;
     }, [analysis]);
 
+    // Safe Data Extraction & Mapping (The "Anti-Crash" Layer)
+    const summary = analysis?.summary || {};
+    const habits = analysis?.habits || {};
+
+    const delivery = habits.delivery || {};
+    const vocal = habits.vocal || {};
+    const cognitive = habits.cognitive || {};
+
+    const presence = analysis?.presence || { eyeContactPercentage: 0, postureScore: 0 };
+    const speech = analysis?.speech || { clarityScore: 0, fillerWords: { count: 0, occurrences: [] } };
+    const recommendations = analysis?.recommendations || [];
+
+    // Map Specific Metrics with Defaults
+    const pauses = delivery.pauses || { pauseScore: 0, strategicPauses: 0, feedback: 'No data' };
+    const rate = delivery.rate || { variabilityScore: 0, minWpm: 0, maxWpm: 0, feedback: 'No data' };
+    const declarative = delivery.declarative || { declarativeScore: 0, hedgingCount: 0, feedback: 'No data' };
+
+    const volume = vocal.volume || { volumeScore: 0, hasTrailingOff: false, history: [], feedback: 'No data' };
+
+    const thoughtCompletion = cognitive.thoughtCompletion || { completionScore: 0, veryLongSentences: 0, feedback: 'No data' };
+    const frameworks = cognitive.frameworks || { frameworkScore: 0, hasContext: false, feedback: 'No data' };
+    const analogies = cognitive.analogies || { analogyScore: 0, analogyCount: 0, feedback: 'No data' };
+
+    const habitsScore = summary.habitsScore || 0;
+
+    // Map stuttering report to 'fluency' if available
+    const fluency = analysis?.stuttering || null;
+
     if (isLoading) {
         return (
             <div className="h-full flex items-center justify-center">
@@ -41,113 +69,221 @@ export function AnalysisView({ analysis, isLoading = false }) {
     }
 
     return (
-        <div className="h-full overflow-auto p-6">
-            {/* Header Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="h-full overflow-auto p-6 flex flex-col gap-8">
+            {/* Header Stats - Staggered Reveal */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 {/* Overall Score */}
-                <div className="stat-card col-span-2 md:col-span-1">
-                    <div
-                        className="stat-value"
-                        style={{
-                            background: `linear-gradient(135deg, ${overallScoreData?.color || '#6366f1'}, #22d3ee)`,
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent'
-                        }}
-                    >
-                        {analysis.summary.overallScore}
+                <div className="stat-card reveal reveal-delay-1">
+                    <div className="stat-value">
+                        {summary.overallScore || 0}
                     </div>
-                    <div className="stat-label">Overall Score</div>
-                    {overallScoreData && (
-                        <div
-                            className="text-xs font-medium mt-1"
-                            style={{ color: overallScoreData.color }}
-                        >
-                            {overallScoreData.label}
-                        </div>
-                    )}
+                    <div className="stat-label">Performance Index</div>
                 </div>
 
                 {/* WPM */}
-                <div className="stat-card">
-                    <div
-                        className="stat-value"
-                        style={{
-                            background: `linear-gradient(135deg, ${wpmData?.color || '#6366f1'}, #22d3ee)`,
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent'
-                        }}
-                    >
-                        {analysis.summary.wpm}
+                <div className="stat-card reveal reveal-delay-2">
+                    <div className="stat-value">
+                        {summary.wpm || 0}
                     </div>
-                    <div className="stat-label">Words/Min</div>
-                    {wpmData && (
-                        <div
-                            className="text-xs font-medium mt-1"
-                            style={{ color: wpmData.color }}
-                        >
-                            {wpmData.label}
-                        </div>
-                    )}
+                    <div className="stat-label">Precision Rate (WPM)</div>
                 </div>
 
                 {/* Duration */}
-                <div className="stat-card">
-                    <div className="stat-value">
-                        {formatDuration(analysis.summary.duration)}
+                <div className="stat-card reveal reveal-delay-3">
+                    <div className="stat-value" style={{ fontSize: '2.5rem' }}>
+                        {formatDuration(summary.duration || 0)}
                     </div>
-                    <div className="stat-label">Duration</div>
+                    <div className="stat-label">Session Duration</div>
                 </div>
 
                 {/* Word Count */}
-                <div className="stat-card">
-                    <div className="stat-value">
-                        {analysis.summary.wordCount}
+                <div className="stat-card reveal reveal-delay-4">
+                    <div className="stat-value" style={{ fontSize: '2.5rem' }}>
+                        {summary.wordCount || 0}
                     </div>
-                    <div className="stat-label">Total Words</div>
+                    <div className="stat-label">Lexical Count</div>
                 </div>
             </div>
 
             {/* Detailed Analysis */}
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-8 reveal reveal-delay-5">
                 {/* Filler Words */}
-                <div className="glass-strong p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        🗣️ Filler Words
+                <div className="glass-strong p-8">
+                    <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <span>🗣️</span> FILLER DETECTION
                     </h3>
 
-                    {analysis.speech.fillerWords.count > 0 ? (
+                    {speech.fillerWords.count > 0 ? (
                         <>
-                            <div className="text-4xl font-bold text-yellow-400 mb-4">
-                                {analysis.speech.fillerWords.count}
-                                <span className="text-lg text-white/50 font-normal ml-2">found</span>
+                            <div className="flex items-end gap-3 mb-8">
+                                <div className="text-6xl font-extrabold text-white leading-none">
+                                    {speech.fillerWords.count}
+                                </div>
+                                <div className="text-xs font-bold text-amber-500 uppercase tracking-tight mb-1">
+                                    Non-declarative markers
+                                </div>
                             </div>
 
-                            <div className="space-y-2">
-                                {analysis.speech.fillerWords.occurrences.slice(0, 5).map((item) => (
+                            <div className="space-y-3">
+                                {speech.fillerWords.occurrences.slice(0, 5).map((item) => (
                                     <div
                                         key={item.word}
-                                        className="flex items-center justify-between p-2 bg-white/5 rounded-lg"
+                                        className="flex items-center justify-between p-3 bg-white/2 rounded border border-white/5"
                                     >
-                                        <span className="text-white/80 font-mono">"{item.word}"</span>
-                                        <span className="text-white/50 text-sm">{item.count}×</span>
+                                        <span className="text-white/80 font-mono text-sm">"{item.word}"</span>
+                                        <span className="text-white/30 text-xs font-bold">{item.count}X</span>
                                     </div>
                                 ))}
                             </div>
                         </>
                     ) : (
-                        <div className="text-center py-4">
-                            <div className="text-4xl mb-2">🎉</div>
-                            <p className="text-green-400 font-medium">No filler words detected!</p>
-                            <p className="text-white/50 text-sm mt-1">Excellent clarity</p>
+                        <div className="text-center py-8">
+                            <div className="text-5xl mb-4">💎</div>
+                            <p className="text-emerald-400 font-bold uppercase tracking-wider">Perfect Clarity</p>
+                            <p className="text-white/30 text-xs mt-2">Zero filler words detected</p>
                         </div>
                     )}
                 </div>
 
+                {/* NEW: 9 Habits for Clearer Speaking */}
+                {analysis.habits && (
+                    <div className="col-span-2 space-y-6">
+                        {/* Section Header */}
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                                🎯 Speaking Habits
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <span className="text-white/60 text-sm font-medium">Habits Score</span>
+                                <span
+                                    className="text-lg font-bold px-3 py-1 rounded-full"
+                                    style={{
+                                        background: habitsScore >= 80 ? 'rgba(16,185,129,0.1)' :
+                                            habitsScore >= 60 ? 'rgba(34,211,238,0.1)' :
+                                                'rgba(245,158,11,0.1)',
+                                        color: habitsScore >= 80 ? '#10b981' :
+                                            habitsScore >= 60 ? '#22d3ee' : '#f59e0b',
+                                        border: `1px solid ${habitsScore >= 80 ? 'rgba(16,185,129,0.2)' :
+                                            habitsScore >= 60 ? 'rgba(34,211,238,0.2)' :
+                                                'rgba(245,158,11,0.2)'}`
+                                    }}
+                                >
+                                    {habitsScore}%
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* 1. DELIVERY HABITS */}
+                        <div className="glass-strong p-6">
+                            <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-4">
+                                GROUP 1: DELIVERY (HOW YOU SAY IT)
+                            </h4>
+                            <div className="grid md:grid-cols-3 gap-4">
+                                {/* Habit 1: Pause More */}
+                                <HabitCard
+                                    icon="⏸️"
+                                    title="Pausing"
+                                    score={pauses.pauseScore}
+                                    metric={`${pauses.strategicPauses} strategic`}
+                                    feedback={pauses.feedback}
+                                />
+                                {/* Habit 2: Rate/Tempo */}
+                                <HabitCard
+                                    icon="🎚️"
+                                    title="Pace Variety"
+                                    score={rate.variabilityScore}
+                                    metric={`${rate.minWpm}-${rate.maxWpm} WPM`}
+                                    feedback={rate.feedback}
+                                />
+                                {/* Habit 3: Declarative (Hedging) */}
+                                <HabitCard
+                                    icon="💬"
+                                    title="Clarity"
+                                    score={declarative.declarativeScore}
+                                    metric={declarative.hedgingCount === 0 ? "Direct speech" : `${declarative.hedgingCount} hedges`}
+                                    feedback={declarative.feedback}
+                                />
+                            </div>
+                        </div>
+
+                        {/* 2. VOCAL HABITS */}
+                        <div className="glass-strong p-6">
+                            <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-4">
+                                GROUP 2: VOCAL (YOUR VOICE MECHANICS)
+                            </h4>
+                            <div className="grid md:grid-cols-2 gap-4 mb-4">
+                                {/* Habit 6: Volume */}
+                                <HabitCard
+                                    icon="🔊"
+                                    title="Volume & Energy"
+                                    score={volume.volumeScore}
+                                    metric={volume.hasTrailingOff ? "Trails off at ends" : "Consistent projection"}
+                                    feedback={volume.feedback}
+                                />
+                                {/* Habit 4 & 5 Guidance */}
+                                <div className="p-4 bg-white/5 rounded-xl flex flex-col justify-center">
+                                    <div className="flex items-center gap-2 mb-2 text-white/80">
+                                        <span>🧘</span>
+                                        <span className="font-medium">Voice Health</span>
+                                    </div>
+                                    <div className="text-xs text-white/50 space-y-1">
+                                        <p>• Warm up before speaking (Habit 4)</p>
+                                        <p>• Nose breathing default (Habit 5)</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Volume Chart */}
+                            {volume.history && volume.history.length > 0 && (
+                                <div className="p-4 bg-white/5 rounded-xl">
+                                    <div className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2">Volume Projection Analysis</div>
+                                    <VolumeChart data={volume.history} />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 3. COGNITIVE HABITS */}
+                        <div className="glass-strong p-6">
+                            <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest mb-4">
+                                GROUP 3: COGNITIVE (HOW YOU THINK)
+                            </h4>
+                            <div className="grid md:grid-cols-3 gap-4">
+                                {/* Habit 7: Thought Completion */}
+                                <HabitCard
+                                    icon="🧠"
+                                    title="Thought Loops"
+                                    score={thoughtCompletion.completionScore}
+                                    metric={thoughtCompletion.veryLongSentences > 0 ? "Run-on sentences" : "Clear thoughts"}
+                                    feedback={thoughtCompletion.feedback}
+                                />
+                                {/* Habit 8: Frameworks */}
+                                <HabitCard
+                                    icon="📐"
+                                    title="Structure (CCC)"
+                                    score={frameworks.frameworkScore}
+                                    metric={frameworks.hasContext ? "Has Context" : "Needs Context"}
+                                    feedback={frameworks.feedback}
+                                />
+                                {/* Habit 9: Analogies */}
+                                <HabitCard
+                                    icon="💡"
+                                    title="Analogies"
+                                    score={analogies.analogyScore}
+                                    metric={`${analogies.analogyCount} used`}
+                                    feedback={analogies.feedback}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8 reveal reveal-delay-5">
                 {/* NEW: Fluency Patterns (Stuttering Analysis) */}
-                {analysis.fluency && (
-                    <div className="glass-strong p-6">
-                        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                            🌊 Fluency Patterns
+                {fluency && (
+                    <div className="glass-strong p-8">
+                        <h3 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <span>🌊</span> FLUENCY PROFILE
                         </h3>
 
                         {/* Fluency Score */}
@@ -157,98 +293,70 @@ export function AnalysisView({ analysis, isLoading = false }) {
                                 <span
                                     className="text-2xl font-bold"
                                     style={{
-                                        color: analysis.fluency.score >= 85 ? '#10b981' :
-                                            analysis.fluency.score >= 70 ? '#22d3ee' :
-                                                analysis.fluency.score >= 50 ? '#f59e0b' : '#ef4444'
+                                        color: fluency.score >= 85 ? '#10b981' :
+                                            fluency.score >= 70 ? '#22d3ee' :
+                                                fluency.score >= 50 ? '#f59e0b' : '#ef4444'
                                     }}
                                 >
-                                    {analysis.fluency.score}
+                                    {fluency.score}
                                 </span>
                                 <span
-                                    className="text-xs px-2 py-1 rounded-full"
+                                    className="text-xs px-2 py-1 rounded-full text-white"
                                     style={{
-                                        background: analysis.fluency.severity === 'minimal' ? 'rgba(16,185,129,0.2)' :
-                                            analysis.fluency.severity === 'mild' ? 'rgba(34,211,238,0.2)' :
-                                                analysis.fluency.severity === 'moderate' ? 'rgba(245,158,11,0.2)' :
+                                        background: fluency.severity === 'minimal' ? 'rgba(16,185,129,0.2)' :
+                                            fluency.severity === 'mild' ? 'rgba(34,211,238,0.2)' :
+                                                fluency.severity === 'moderate' ? 'rgba(245,158,11,0.2)' :
                                                     'rgba(239,68,68,0.2)',
-                                        color: analysis.fluency.severity === 'minimal' ? '#10b981' :
-                                            analysis.fluency.severity === 'mild' ? '#22d3ee' :
-                                                analysis.fluency.severity === 'moderate' ? '#f59e0b' : '#ef4444'
+                                        color: fluency.severity === 'minimal' ? '#10b981' :
+                                            fluency.severity === 'mild' ? '#22d3ee' :
+                                                fluency.severity === 'moderate' ? '#f59e0b' : '#ef4444'
                                     }}
                                 >
-                                    {analysis.fluency.severity}
+                                    {fluency.severity}
                                 </span>
                             </div>
                         </div>
 
-                        {/* Blocks */}
-                        <div className="mb-4 p-3 bg-white/5 rounded-xl">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-white/60 text-sm">⏸️ Blocks (Pauses)</span>
-                                <span className="text-white font-medium">
-                                    {analysis.fluency.blocks.count}
-                                </span>
-                            </div>
-                            {analysis.fluency.blocks.count > 0 && (
-                                <div className="text-xs text-white/40 mt-1">
-                                    {analysis.fluency.blocks.blocks.slice(0, 2).map((block, i) => (
-                                        <span key={i}>
-                                            {i > 0 && ' • '}
-                                            {block.duration}s before "{block.afterWord}"
-                                        </span>
-                                    ))}
+                        {/* Blocks And Repetitions Container */}
+                        <div className="space-y-4">
+                            {/* Blocks */}
+                            <div className="p-3 bg-white/5 rounded-xl">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-white/60 text-sm">⏸️ Blocks (Pauses)</span>
+                                    <span className="text-white font-medium">
+                                        {fluency.blocks?.count || 0}
+                                    </span>
                                 </div>
-                            )}
-                        </div>
+                                {(fluency.blocks?.count || 0) > 0 && (
+                                    <div className="text-xs text-white/40 mt-1">
+                                        {fluency.blocks.blocks.slice(0, 2).map((block, i) => (
+                                            <span key={i}>
+                                                {i > 0 && ' • '}
+                                                {block.duration}s before "{block.afterWord}"
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
 
-                        {/* Repetitions */}
-                        <div className="mb-4 p-3 bg-white/5 rounded-xl">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-white/60 text-sm">🔄 Repetitions</span>
-                                <span className="text-white font-medium">
-                                    {analysis.fluency.repetitions.count}
-                                </span>
-                            </div>
-                            {analysis.fluency.repetitions.count > 0 && (
-                                <div className="text-xs text-white/40 mt-1">
-                                    {analysis.fluency.repetitions.repetitions.slice(0, 2).map((rep, i) => (
-                                        <span key={i}>
-                                            {i > 0 && ' • '}
-                                            "{rep.word}" ×{rep.count}
-                                        </span>
-                                    ))}
+                            {/* Repetitions */}
+                            <div className="p-3 bg-white/5 rounded-xl">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-white/60 text-sm">🔄 Repetitions</span>
+                                    <span className="text-white font-medium">
+                                        {fluency.repetitions?.count || 0}
+                                    </span>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* Pace Variation */}
-                        <div className="p-3 bg-white/5 rounded-xl">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-white/60 text-sm">📊 Pace</span>
-                                <span className="text-white/80 text-sm">
-                                    {analysis.fluency.paceVariation.consistency}
-                                </span>
-                            </div>
-                            {analysis.fluency.paceVariation.segments.length > 1 && (
-                                <div className="flex items-end gap-1 h-8 mt-2">
-                                    {analysis.fluency.paceVariation.segments.map((seg, i) => (
-                                        <div
-                                            key={i}
-                                            className="flex-1 rounded-t"
-                                            style={{
-                                                height: `${Math.min(100, (seg.wpm / 180) * 100)}%`,
-                                                minHeight: '4px',
-                                                background: seg.wpm > 150 ? '#ef4444' :
-                                                    seg.wpm > 120 ? '#22d3ee' :
-                                                        seg.wpm > 80 ? '#10b981' : '#f59e0b'
-                                            }}
-                                            title={`${seg.wpm} WPM at ${seg.startTime}s`}
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                            <div className="text-xs text-white/40 mt-2 text-center">
-                                Avg: {analysis.fluency.paceVariation.averageWpm} WPM
+                                {(fluency.repetitions?.count || 0) > 0 && (
+                                    <div className="text-xs text-white/40 mt-1">
+                                        {fluency.repetitions.repetitions.slice(0, 2).map((rep, i) => (
+                                            <span key={i}>
+                                                {i > 0 && ' • '}
+                                                "{rep.word}" ×{rep.count}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -257,7 +365,7 @@ export function AnalysisView({ analysis, isLoading = false }) {
                 {/* Presence Metrics */}
                 <div className="glass-strong p-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        👤 Presence
+                        <span>👤</span> Presence
                     </h3>
 
                     <div className="space-y-4">
@@ -266,15 +374,15 @@ export function AnalysisView({ analysis, isLoading = false }) {
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-white/70">Eye Contact</span>
                                 <span className="text-white font-medium">
-                                    {analysis.presence.eyeContactPercentage}%
+                                    {presence.eyeContactPercentage}%
                                 </span>
                             </div>
                             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                                 <div
                                     className="h-full rounded-full transition-all duration-500"
                                     style={{
-                                        width: `${analysis.presence.eyeContactPercentage}%`,
-                                        background: analysis.presence.eyeContactPercentage >= 70
+                                        width: `${presence.eyeContactPercentage}%`,
+                                        background: presence.eyeContactPercentage >= 70
                                             ? 'linear-gradient(90deg, #10b981, #22d3ee)'
                                             : 'linear-gradient(90deg, #f59e0b, #ef4444)'
                                     }}
@@ -287,15 +395,15 @@ export function AnalysisView({ analysis, isLoading = false }) {
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-white/70">Posture</span>
                                 <span className="text-white font-medium">
-                                    {analysis.presence.postureScore}%
+                                    {presence.postureScore}%
                                 </span>
                             </div>
                             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                                 <div
                                     className="h-full rounded-full transition-all duration-500"
                                     style={{
-                                        width: `${analysis.presence.postureScore}%`,
-                                        background: analysis.presence.postureScore >= 70
+                                        width: `${presence.postureScore}%`,
+                                        background: presence.postureScore >= 70
                                             ? 'linear-gradient(90deg, #10b981, #22d3ee)'
                                             : 'linear-gradient(90deg, #f59e0b, #ef4444)'
                                     }}
@@ -308,14 +416,14 @@ export function AnalysisView({ analysis, isLoading = false }) {
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-white/70">Speech Clarity</span>
                                 <span className="text-white font-medium">
-                                    {analysis.speech.clarityScore}%
+                                    {speech.clarityScore}%
                                 </span>
                             </div>
                             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                                 <div
                                     className="h-full rounded-full transition-all duration-500"
                                     style={{
-                                        width: `${analysis.speech.clarityScore}%`,
+                                        width: `${speech.clarityScore}%`,
                                         background: 'linear-gradient(90deg, #6366f1, #22d3ee)'
                                     }}
                                 />
@@ -326,14 +434,14 @@ export function AnalysisView({ analysis, isLoading = false }) {
             </div>
 
             {/* Recommendations */}
-            {analysis.recommendations && analysis.recommendations.length > 0 && (
+            {recommendations && recommendations.length > 0 && (
                 <div className="glass-strong p-6 mt-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                         💡 Recommendations
                     </h3>
 
                     <ul className="space-y-3">
-                        {analysis.recommendations.map((rec, index) => {
+                        {recommendations.map((rec, index) => {
                             // Handle both string and object recommendations
                             const icon = typeof rec === 'object' ? rec.icon : '→';
                             const text = typeof rec === 'object' ? rec.text : rec;
@@ -362,3 +470,96 @@ export function AnalysisView({ analysis, isLoading = false }) {
 }
 
 export default AnalysisView;
+
+function HabitCard({ icon, title, score, metric, feedback }) {
+    return (
+        <div className="p-4 bg-white/5 rounded-xl transition-all hover:bg-white/10">
+            <div className="flex items-center gap-2 mb-3">
+                <span className="text-xl">{icon}</span>
+                <span className="text-white/80 font-medium">{title}</span>
+            </div>
+            <div className="text-2xl font-bold text-white mb-1">
+                {score}%
+            </div>
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-2">
+                <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                        width: `${score}%`,
+                        background: score >= 70
+                            ? 'linear-gradient(90deg, #10b981, #22d3ee)'
+                            : 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                    }}
+                />
+            </div>
+            <div className="text-xs text-white/50">
+                {metric}
+            </div>
+            <div className="text-xs text-white/40 mt-1 line-clamp-2" title={feedback}>
+                {feedback}
+            </div>
+        </div>
+    );
+}
+
+function VolumeChart({ data }) {
+    if (!data || data.length === 0) return null;
+
+    // Downsample for performance if needed
+    const points = data.length > 200
+        ? data.filter((_, i) => i % Math.ceil(data.length / 200) === 0)
+        : data;
+
+    const maxVal = Math.max(...points, 100);
+    const height = 100;
+    const width = 100;
+
+    // Generate SVG path for the line
+    const pathD = points.map((val, i) => {
+        const x = (i / (points.length - 1)) * width;
+        const y = height - ((val / maxVal) * height);
+        return `${x},${y}`;
+    }).join(' ');
+
+    // Generate area path for fill
+    const areaD = `0,${height} ${pathD} ${width},${height}`;
+
+    return (
+        <div className="w-full h-32 relative mt-2">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                {/* Ideal Range Band (approx 25-60 out of 100 max) */}
+                <rect x="0" y={height - (60 / maxVal * height)} width={width} height={(35 / maxVal * height)} fill="rgba(34, 211, 238, 0.1)" />
+                <line x1="0" y1={height - (25 / maxVal * height)} x2={width} y2={height - (25 / maxVal * height)} stroke="rgba(34, 211, 238, 0.2)" strokeDasharray="2,2" vectorEffect="non-scaling-stroke" />
+
+                {/* Gradient Definition */}
+                <defs>
+                    <linearGradient id="volGradient" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity="0.5" />
+                        <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity="0" />
+                    </linearGradient>
+                </defs>
+
+                {/* The Filled Area */}
+                <polyline points={areaD} fill="url(#volGradient)" />
+
+                {/* The Line */}
+                <polyline
+                    points={pathD}
+                    fill="none"
+                    stroke="var(--accent-cyan)"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </svg>
+
+            {/* Labels */}
+            <div className="absolute top-0 left-0 w-full h-full pointer-events-none flex flex-col justify-between text-[10px] text-white/30 font-mono">
+                <span>100%</span>
+                <span>0%</span>
+            </div>
+            <div className="text-[10px] text-cyan-400/50 text-right w-full mt-1">Ideal Range: 25-60%</div>
+        </div>
+    );
+}

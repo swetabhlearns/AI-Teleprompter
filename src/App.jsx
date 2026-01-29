@@ -9,6 +9,8 @@ import InterviewSetup from './components/InterviewSetup';
 import InterviewSession from './components/InterviewSession';
 import InterviewResults from './components/InterviewResults';
 import ExtemporePractice from './components/ExtemporePractice';
+import WarmUpGuide from './components/WarmUpGuide';
+import { useSession } from './contexts/SessionContext';
 import { useMediaPipe } from './hooks/useMediaPipe';
 import { useRecorder } from './hooks/useRecorder';
 import { useGroq } from './hooks/useGroq';
@@ -20,6 +22,9 @@ import { formatDuration } from './utils/formatters';
 
 function App() {
   const posthog = usePostHog();
+
+  // Session context for recording, stream, and tracking state
+  const session = useSession();
 
   // Tab navigation
   const [activeTab, setActiveTab] = useState('script');
@@ -36,20 +41,11 @@ function App() {
 
   // Practice state
   const [isPracticing, setIsPracticing] = useState(false);
-  const [stream, setStream] = useState(null);
 
-  // Recording result state (after stopping, before analysis)
-  const [recordingResult, setRecordingResult] = useState(null);
-  const [hasRecording, setHasRecording] = useState(false); // Separate flag for UI
-  const [sessionDuration, setSessionDuration] = useState(0);
-
-  // Analysis state
-  const [analysis, setAnalysis] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  // Real-time tracking state (updated from MediaPipe)
+  // Real-time tracking state (local to avoid context re-renders)
   const [currentEyeContact, setCurrentEyeContact] = useState(null);
   const [currentPosture, setCurrentPosture] = useState(null);
+  const lastTrackingUpdateRef = useRef(0);
 
   // Tracking metrics for analysis (accumulated over session)
   const metricsRef = useRef({
@@ -58,8 +54,9 @@ function App() {
     postureScores: []
   });
 
-  // Saved metrics after stopping (for analysis)
-  const [savedMetrics, setSavedMetrics] = useState(null);
+  // Analysis state
+  const [analysis, setAnalysis] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Hooks
   const {
@@ -97,8 +94,8 @@ function App() {
 
   // Handle stream ready from camera
   const handleStreamReady = useCallback((newStream) => {
-    setStream(newStream);
-  }, []);
+    session.setStream(newStream);
+  }, [session.setStream]);
 
   // Set video ref when practice or interview tab is active
   useEffect(() => {
@@ -114,8 +111,6 @@ function App() {
   }, [activeTab, interview.state]);
 
   // MediaPipe processing loop
-  const lastStateUpdateRef = useRef(0);
-
   useEffect(() => {
     if (!isPracticing || !mediaPipeReady || !videoRef.current) {
       return;
@@ -130,6 +125,7 @@ function App() {
         const result = processFrame(videoRef.current);
 
         if (result) {
+          // Update local metrics ref for later analysis (no re-render)
           metricsRef.current.totalFrames++;
           if (result.eyeContact?.isLookingAtCamera) {
             metricsRef.current.eyeContactFrames++;
@@ -138,9 +134,10 @@ function App() {
             metricsRef.current.postureScores.push(result.posture.score);
           }
 
+          // Throttled UI updates (local state)
           const now = Date.now();
-          if (now - lastStateUpdateRef.current > 100) {
-            lastStateUpdateRef.current = now;
+          if (now - lastTrackingUpdateRef.current > 100) {
+            lastTrackingUpdateRef.current = now;
             setCurrentEyeContact(result.eyeContact);
             setCurrentPosture(result.posture);
           }
@@ -165,27 +162,24 @@ function App() {
   // Start practice session
   const handleStartPractice = async () => {
     setActiveTab('practice');
-    setRecordingResult(null);
 
     if (posthog) posthog.capture('practice_started');
 
-    setHasRecording(false);
     setAnalysis(null);
-    setSavedMetrics(null);
-
+    session.resetSession();
+    setCurrentEyeContact(null);
+    setCurrentPosture(null);
+    lastTrackingUpdateRef.current = 0;
     metricsRef.current = {
       eyeContactFrames: 0,
       totalFrames: 0,
       postureScores: []
     };
 
-    setCurrentEyeContact(null);
-    setCurrentPosture(null);
-
     setTimeout(() => {
       setIsPracticing(true);
-      if (stream) {
-        startRecording(stream);
+      if (session.stream) {
+        startRecording(session.stream);
       }
     }, 500);
   };
@@ -194,8 +188,14 @@ function App() {
   const handleCancelPractice = async () => {
     setIsPracticing(false);
     await stopRecording();
-    setRecordingResult(null);
-    setHasRecording(false);
+    session.resetSession();
+    setCurrentEyeContact(null);
+    setCurrentPosture(null);
+    metricsRef.current = {
+      eyeContactFrames: 0,
+      totalFrames: 0,
+      postureScores: []
+    };
     setActiveTab('script');
   };
 
@@ -211,10 +211,7 @@ function App() {
       const recordedBlob = result.blob || result;
       const finalDuration = result.duration || duration;
 
-      // Save the current duration using the reliable return value
-      setSessionDuration(finalDuration);
-
-      // Calculate and save metrics
+      // Calculate metrics from local metricsRef
       const eyeContactPercentage = metricsRef.current.totalFrames > 0
         ? Math.round((metricsRef.current.eyeContactFrames / metricsRef.current.totalFrames) * 100)
         : 0;
@@ -223,25 +220,18 @@ function App() {
         ? Math.round(metricsRef.current.postureScores.reduce((a, b) => a + b, 0) / metricsRef.current.postureScores.length)
         : 0;
 
-      console.log('Recording stopped. Metrics:', {
-        totalFrames: metricsRef.current.totalFrames,
-        eyeContactFrames: metricsRef.current.eyeContactFrames,
-        eyeContactPercentage,
-        avgPosture,
-        blobSize: recordedBlob?.size || 0,
-        finalDuration
-      });
+      const metrics = { eyeContactPercentage, avgPosture };
 
-      // Save for later analysis
-      setSavedMetrics({ eyeContactPercentage, avgPosture });
-      setRecordingResult(recordedBlob);
-      setHasRecording(true); // Always set to true after stopping
+      // Save recording and metrics to session context
+      // result now contains volumeHistory from useRecorder
+      session.saveRecording(recordedBlob, finalDuration, metrics, result.volumeHistory);
 
       if (posthog) {
         posthog.capture('practice_stopped', {
           duration: finalDuration,
           eyeContact: eyeContactPercentage,
-          posture: avgPosture
+          posture: avgPosture,
+          volume_samples: result.volumeHistory?.length || 0
         });
       }
 
@@ -257,23 +247,20 @@ function App() {
   const handleStartExtempore = () => {
     if (posthog) posthog.capture('extempore_started');
 
-    setRecordingResult(null);
-    setHasRecording(false);
     setAnalysis(null);
-    setSavedMetrics(null);
-
+    session.resetSession();
+    setCurrentEyeContact(null);
+    setCurrentPosture(null);
+    lastTrackingUpdateRef.current = 0;
     metricsRef.current = {
       eyeContactFrames: 0,
       totalFrames: 0,
       postureScores: []
     };
 
-    setCurrentEyeContact(null);
-    setCurrentPosture(null);
-
     setIsPracticing(true);
-    if (stream) {
-      startRecording(stream);
+    if (session.stream) {
+      startRecording(session.stream);
     }
   };
 
@@ -289,11 +276,11 @@ function App() {
     console.log('Is valid Blob?:', isValidBlob);
     console.log('actualDirectBlob:', actualDirectBlob);
     console.log('directDuration:', directDuration);
-    console.log('recordingResult:', recordingResult?.size, 'bytes');
+    console.log('recordingResult:', session.recordingResult?.size, 'bytes');
     console.log('audioBlob from hook:', audioBlob?.size, 'bytes');
 
     // Prioritize: direct blob (if valid) → stored recordingResult → hook audioBlob
-    const sourceBlob = actualDirectBlob || recordingResult || audioBlob;
+    const sourceBlob = actualDirectBlob || session.recordingResult || audioBlob;
     console.log('Final sourceBlob size:', sourceBlob?.size, 'bytes');
 
     if (!sourceBlob) {
@@ -341,7 +328,7 @@ function App() {
 
       // Use direct duration if provided, otherwise fallback to state or 0
       // This fixes the race condition where state hasn't updated yet
-      const finalDuration = directDuration || sessionDuration || 0;
+      const finalDuration = directDuration || session.sessionDuration || 0;
 
       // Generate comprehensive performance report
       const report = generatePerformanceReport({
@@ -349,8 +336,12 @@ function App() {
         words: transcriptData.words || [],
         stutteringReport,
         durationMs: finalDuration,
-        eyeContactPercentage: savedMetrics?.eyeContactPercentage || 0,
-        postureScore: savedMetrics?.avgPosture || 0
+        eyeContactPercentage: session.savedMetrics?.eyeContactPercentage || 0,
+        stutteringReport,
+        durationMs: finalDuration,
+        eyeContactPercentage: session.savedMetrics?.eyeContactPercentage || 0,
+        postureScore: session.savedMetrics?.avgPosture || 0,
+        volumeHistory: session.volumeHistory || [] // Pass volume history for analysis
       });
 
       console.log('Performance Report:', report);
@@ -375,8 +366,7 @@ function App() {
   };
 
   const handleSkipAnalysis = () => {
-    setRecordingResult(null);
-    setHasRecording(false);
+    session.resetSession();
     setActiveTab('script');
   };
 
@@ -403,9 +393,10 @@ function App() {
   };
 
   const tabs = [
+    { id: 'warmup', label: '🎤 Warm-Up' },
     { id: 'script', label: '📝 Script' },
     { id: 'extempore', label: '💬 Extempore' },
-    { id: 'interview', label: '🎤 Interview' },
+    { id: 'interview', label: '🗣️ Interview' },
     { id: 'practice', label: '🎬 Practice' },
     { id: 'analysis', label: '📊 Analysis' }
   ];
@@ -418,16 +409,16 @@ function App() {
           <div className="flex items-center" style={{ gap: '12px' }}>
             <div style={{ fontSize: '32px' }}>🎙️</div>
             <div>
-              <h1 className="font-display" style={{ fontSize: '22px', fontWeight: '800', color: 'white', letterSpacing: '-0.02em' }}>
-                AI Teleprompter
+              <h1 className="font-display" style={{ fontSize: '28px', fontWeight: '800', color: 'white', letterSpacing: '-0.04em', lineHeight: '1' }}>
+                AI TRACKER
               </h1>
-              <p style={{ fontSize: '12px', color: 'rgba(226,232,240,0.5)', letterSpacing: '0.02em' }}>
-                Fluency Practice Assistant
+              <p style={{ fontSize: '10px', color: 'var(--accent-cyan)', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: '700', marginTop: '4px' }}>
+                Clearer Speech Engine
               </p>
             </div>
           </div>
 
-          <nav className="tab-nav">
+          <nav className="tab-nav reveal">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -462,10 +453,20 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full" style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px' }}>
+      <main className="flex-1 w-full reveal reveal-delay-1 flex flex-col" style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px', width: '100%' }}>
+        {/* Warm-Up Tab */}
+        {activeTab === 'warmup' && (
+          <div className="reveal reveal-delay-2 flex-1">
+            <WarmUpGuide
+              onComplete={() => setActiveTab('script')}
+              onSkip={() => setActiveTab('script')}
+            />
+          </div>
+        )}
+
         {/* Script Tab */}
         {activeTab === 'script' && (
-          <div style={{ height: 'calc(100vh - 140px)' }}>
+          <div className="flex-1 flex flex-col">
             <ScriptEditor
               script={script}
               onScriptChange={setScript}
@@ -476,7 +477,7 @@ function App() {
 
         {/* Interview Tab */}
         {activeTab === 'interview' && (
-          <div style={{ height: 'calc(100vh - 140px)' }}>
+          <div className="flex-1 flex flex-col">
             {/* Setup Phase */}
             {(interview.state === INTERVIEW_STATES.IDLE || interview.state === INTERVIEW_STATES.SETUP) && (
               <InterviewSetup
@@ -528,9 +529,9 @@ function App() {
 
         {/* Extempore Tab */}
         {activeTab === 'extempore' && (
-          <div style={{ height: 'calc(100vh - 140px)' }}>
+          <div className="flex-1 flex flex-col">
             <ExtemporePractice
-              stream={stream}
+              stream={session.stream}
               onStreamReady={handleStreamReady}
               mediaPipeReady={mediaPipeReady}
               mediaPipeLoading={mediaPipeLoading}
@@ -549,7 +550,7 @@ function App() {
 
         {/* Practice Tab */}
         {activeTab === 'practice' && (
-          <div style={{ height: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="flex-1 flex flex-col gap-5">
             {/* Camera with overlays */}
             <div style={{ flex: 1, position: 'relative', borderRadius: '20px', overflow: 'hidden', minHeight: '400px' }}>
               <CameraView
@@ -587,9 +588,9 @@ function App() {
                   )}
 
                   {/* Show saved recording info */}
-                  {!isPracticing && hasRecording && (
+                  {!isPracticing && session.hasRecording && (
                     <div style={{ fontSize: '14px', color: '#10b981' }}>
-                      ✓ Recording saved ({formatDuration(sessionDuration)})
+                      ✓ Recording saved ({formatDuration(session.sessionDuration)})
                     </div>
                   )}
 
@@ -601,7 +602,7 @@ function App() {
                 </div>
 
                 <div className="flex" style={{ gap: '12px' }}>
-                  {!isPracticing && !hasRecording ? (
+                  {!isPracticing && !session.hasRecording ? (
                     <button
                       onClick={handleStartPractice}
                       disabled={!script}
@@ -627,7 +628,7 @@ function App() {
                         ⏹ Stop Recording
                       </button>
                     </>
-                  ) : hasRecording ? (
+                  ) : session.hasRecording ? (
                     <>
                       <button
                         onClick={handleSkipAnalysis}
@@ -681,7 +682,7 @@ function App() {
 
         {/* Analysis Tab */}
         {activeTab === 'analysis' && (
-          <div style={{ height: 'calc(100vh - 140px)' }}>
+          <div className="flex-1 flex flex-col">
             <AnalysisView
               analysis={analysis}
               isLoading={isAnalyzing || isTranscribing}
@@ -689,6 +690,29 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* Footer / Trust Section */}
+      <footer className="glass-strong border-t border-white/5" style={{ padding: '32px 24px', marginTop: 'auto' }}>
+        <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div style={{ fontSize: '24px' }}>🎙️</div>
+            <div>
+              <div style={{ fontWeight: '800', color: 'white', fontSize: '14px', letterSpacing: '-0.02em' }}>AI TRACKER</div>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontWeight: '600' }}>BUILT FOR MODERN CREATORS</div>
+            </div>
+          </div>
+
+          <div className="flex gap-8 text-[12px] font-medium text-white/40">
+            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+            <a href="#" className="hover:text-white transition-colors">How it Works</a>
+          </div>
+
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>
+            © 2026 AI Tracker Engine. Empowering clearer voices worldwide.
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

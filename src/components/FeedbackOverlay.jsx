@@ -60,8 +60,8 @@ export function FeedbackOverlay({
                 }
 
                 items.push({
-                    id: `posture-${idx}`,
-                    message: `${emoji} ${issue}`,
+                    id: `posture - ${idx} `,
+                    message: `${emoji} ${issue} `,
                     type,
                     priority: 2
                 });
@@ -127,8 +127,8 @@ export function FeedbackOverlay({
             {feedbackItems.map((item, index) => (
                 <div
                     key={item.id}
-                    className={`feedback-badge ${item.type} animate-slide-in`}
-                    style={{ animationDelay: `${index * 0.1}s` }}
+                    className={`feedback - badge ${item.type} animate - slide -in `}
+                    style={{ animationDelay: `${index * 0.1} s` }}
                 >
                     {item.message}
                 </div>

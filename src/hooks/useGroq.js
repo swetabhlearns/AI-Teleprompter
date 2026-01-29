@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import Groq from 'groq-sdk';
 import { encode, decode } from '@toon-format/toon';
 import { generateScriptPrompt } from '../utils/formatters';
+import { searchWeb, formatSearchContext } from '../utils/webSearch';
 
 // Initialize Groq client
 const groq = new Groq({
@@ -52,8 +53,9 @@ export function useGroq() {
      * @param {string} tone - Tone/style
      * @param {number} targetDuration - Duration in seconds
      * @param {string} difficulty - easy/medium/hard/expert
+     * @param {boolean} useCurrentData - Whether to fetch current web data
      */
-    const generateScript = useCallback(async (topic, tone = 'professional', targetDuration = 120, difficulty = 'easy') => {
+    const generateScript = useCallback(async (topic, tone = 'professional', targetDuration = 120, difficulty = 'easy', useCurrentData = false) => {
         setIsLoading(true);
         setError(null);
 
@@ -92,6 +94,19 @@ export function useGroq() {
         const settings = difficultySettings[difficulty] || difficultySettings.easy;
 
         try {
+            // Optionally fetch current web data
+            let webContext = '';
+            if (useCurrentData) {
+                console.log('🌐 Fetching current web data for:', topic);
+                const searchResult = await searchWeb(topic);
+                if (searchResult.success && searchResult.results.length > 0) {
+                    webContext = formatSearchContext(searchResult.results);
+                    console.log('✅ Web context retrieved:', searchResult.results.length, 'sources');
+                } else {
+                    console.warn('⚠️ Could not fetch web data:', searchResult.error);
+                }
+            }
+
             const requestData = {
                 topic,
                 tone,
@@ -103,7 +118,7 @@ export function useGroq() {
             const toonRequest = encode(requestData);
             console.log('TOON request:', toonRequest);
 
-            const prompt = `Create a teleprompter script with these settings:
+            let prompt = `Create a teleprompter script with these settings:
 ${toonRequest}
 
 Difficulty: ${difficulty.toUpperCase()}
@@ -111,15 +126,20 @@ Difficulty: ${difficulty.toUpperCase()}
 - ${settings.vocab}
 - ${settings.sentences}
 - [PAUSE] markers: ${settings.pauseFreq}
-- Target ${settings.wpm} words per minute
+- Target ${settings.wpm} words per minute`;
 
-Output plain text script only. No markdown.`;
+            // Add web context if available
+            if (webContext) {
+                prompt += `\n\n${webContext}\n\nIMPORTANT: Use the current web information above to include accurate, up-to-date facts in your script.`;
+            }
+
+            prompt += '\n\nOutput plain text script only. No markdown.';
 
             const completion = await groq.chat.completions.create({
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a scriptwriter creating ${difficulty}-level content for speech practice. Adjust complexity based on difficulty level.`
+                        content: `You are a scriptwriter creating ${difficulty}-level content for speech practice. ${useCurrentData ? 'Use the provided current web information to include accurate, recent facts.' : ''} Adjust complexity based on difficulty level.`
                     },
                     {
                         role: 'user',

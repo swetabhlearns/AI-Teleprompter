@@ -37,6 +37,7 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
     const [tone, setTone] = useState('calm');
     const [difficulty, setDifficulty] = useState('easy');
     const [duration, setDuration] = useState(2);
+    const [useCurrentData, setUseCurrentData] = useState(false);
     const [savedScripts, setSavedScripts] = useState([]);
     const [showLibrary, setShowLibrary] = useState(false);
     const [toast, setToast] = useState(null);
@@ -74,10 +75,11 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                     topic_length: topic.length,
                     tone,
                     difficulty,
-                    duration_target: duration
+                    duration_target: duration,
+                    use_current_data: useCurrentData
                 });
             }
-            const generatedScript = await generateScript(topic, tone, duration * 60, difficulty);
+            const generatedScript = await generateScript(topic, tone, duration * 60, difficulty, useCurrentData);
             onScriptChange(generatedScript);
         } catch (err) {
             console.error('Script generation failed:', err);
@@ -139,7 +141,7 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
     const wordCount = script ? script.trim().split(/\s+/).filter(w => w).length : 0;
 
     return (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Saved Scripts Library Modal */}
             {showLibrary && (
                 <div
@@ -248,11 +250,15 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
 
             {/* AI Generation Section */}
             <div className="glass-strong" style={{ padding: '28px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '28px' }}>🤖</span>
-                        AI Script Generator
-                    </h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+                    <div>
+                        <h2 style={{ fontSize: '28px', fontWeight: '800', color: 'white', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+                            Master the 9 Habits of Clearer Speaking 🎙️
+                        </h2>
+                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '15px', maxWidth: '500px', lineHeight: '1.5' }}>
+                            Prepare structured practice material to master the 9 Habits. Focus on Pauses, Pace, and Tone.
+                        </p>
+                    </div>
 
                     {/* Library Button */}
                     <button
@@ -268,24 +274,39 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                             color: 'white',
                             cursor: 'pointer',
                             fontSize: '14px',
-                            fontWeight: '500'
+                            fontWeight: '500',
+                            whiteSpace: 'nowrap'
                         }}
                     >
-                        📚 My Scripts {savedScripts.length > 0 && `(${savedScripts.length})`}
+                        📚 My Library {savedScripts.length > 0 && `(${savedScripts.length})`}
                     </button>
+                </div>
+
+                {/* Quick Value Points (9 Habits) */}
+                <div style={{ display: 'flex', gap: '20px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                    {[
+                        { icon: '⏸️', text: 'Strategic Pauses' },
+                        { icon: '🐢', text: 'Pace Variation' },
+                        { icon: '🧠', text: 'Thought Structure' }
+                    ].map((item, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '20px' }}>
+                            <span>{item.icon}</span>
+                            <span>{item.text}</span>
+                        </div>
+                    ))}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     {/* Topic Input */}
                     <div>
                         <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
-                            What's your video about?
+                            What topic do you want to practice speaking on?
                         </label>
                         <input
                             type="text"
                             value={topic}
                             onChange={(e) => setTopic(e.target.value)}
-                            placeholder="e.g., Benefits of morning exercise, My travel experience..."
+                            placeholder="e.g., Explain my job effectively, Giving a toast, Pitching a new idea..."
                             className="input"
                         />
                     </div>
@@ -293,7 +314,7 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                     {/* Tone Selection */}
                     <div>
                         <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '10px', fontWeight: '500' }}>
-                            Choose your tone
+                            Practice Tone
                         </label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
                             {tones.map((t) => (
@@ -324,7 +345,7 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                     {/* Difficulty Selection */}
                     <div>
                         <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '10px', fontWeight: '500' }}>
-                            Difficulty Level
+                            Fluency Level
                         </label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
                             {difficulties.map((d) => (
@@ -354,7 +375,7 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                     {/* Duration */}
                     <div>
                         <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '10px', fontWeight: '500' }}>
-                            Target duration: <span style={{ color: 'white', fontWeight: '600' }}>{duration} minute{duration > 1 ? 's' : ''}</span>
+                            Practice Duration: <span style={{ color: 'white', fontWeight: '600' }}>{duration} minute{duration > 1 ? 's' : ''}</span>
                         </label>
                         <input
                             type="range"
@@ -379,24 +400,104 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                         </div>
                     </div>
 
-                    {/* Generate Button */}
-                    <button
-                        onClick={handleGenerate}
-                        disabled={!topic.trim() || isLoading}
-                        className="btn btn-primary"
-                        style={{ width: '100%', padding: '16px', fontSize: '16px' }}
+                    {/* Use Current Data Toggle */}
+                    <div
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '16px 20px',
+                            borderRadius: '14px',
+                            background: useCurrentData
+                                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.15))'
+                                : 'rgba(255,255,255,0.05)',
+                            border: useCurrentData ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                            transition: 'all 0.2s ease'
+                        }}
                     >
-                        {isLoading ? (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px' }} />
-                                Generating fluency-friendly script...
-                            </span>
-                        ) : (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                ✨ Generate Script
-                            </span>
-                        )}
-                    </button>
+                        <div>
+                            <div style={{ color: 'white', fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                🌐 Real-World Context
+                                <span style={{
+                                    fontSize: '10px',
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    background: 'linear-gradient(135deg, #10b981, #06b6d4)',
+                                    color: 'white',
+                                    fontWeight: '500'
+                                }}>NEW</span>
+                            </div>
+                            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '4px' }}>
+                                Use latest web info to make the practice topics relevant
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setUseCurrentData(!useCurrentData)}
+                            style={{
+                                width: '52px',
+                                height: '28px',
+                                borderRadius: '14px',
+                                background: useCurrentData
+                                    ? 'linear-gradient(135deg, #10b981, #06b6d4)'
+                                    : 'rgba(255,255,255,0.2)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                position: 'relative',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            <div style={{
+                                width: '22px',
+                                height: '22px',
+                                borderRadius: '50%',
+                                background: 'white',
+                                position: 'absolute',
+                                top: '3px',
+                                left: useCurrentData ? '27px' : '3px',
+                                transition: 'all 0.2s ease',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                            }} />
+                        </button>
+                    </div>
+
+                    {/* Generate Button */}
+                    <div>
+                        <button
+                            onClick={handleGenerate}
+                            disabled={!topic.trim() || isLoading}
+                            className="btn btn-primary"
+                            style={{
+                                width: '100%',
+                                padding: '18px',
+                                fontSize: '18px',
+                                fontWeight: '700',
+                                boxShadow: '0 8px 25px rgba(99,102,241,0.4)',
+                                background: 'linear-gradient(135deg, #6366f1, #a855f7)'
+                            }}
+                        >
+                            {isLoading ? (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
+                                    <div className="spinner" style={{ width: '22px', height: '22px', borderWidth: '3px' }} />
+                                    Creating practice material...
+                                </span>
+                            ) : (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
+                                    ✨ Generate Practice Script
+                                </span>
+                            )}
+                        </button>
+
+                        {/* 9 Habits Reminder */}
+                        <div style={{
+                            marginTop: '16px',
+                            textAlign: 'center',
+                            fontSize: '12px',
+                            color: 'rgba(255,255,255,0.4)',
+                            fontWeight: '500'
+                        }}>
+                            Based on the 9 Habits of Clearer Speaking by Vin's Communication Coaching
+                        </div>
+                    </div>
 
                     {error && (
                         <div style={{
@@ -447,7 +548,7 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '28px' }}>📝</span>
-                        Your Script
+                        Your Practice Script
                     </h2>
 
                     {script && (
@@ -462,13 +563,12 @@ export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
                     <textarea
                         value={script}
                         onChange={(e) => onScriptChange(e.target.value)}
-                        placeholder={`Start typing your script here or use the AI generator above...
-
-Tips for fluency practice:
-• Keep sentences short and simple
-• Use [PAUSE] markers for breathing breaks
-• Practice one paragraph at a time
-• Start slow, speed comes naturally`}
+                        placeholder={`Start typing your script or generate one above...
+                        
+Focus on:
+• Habit 1: Pause More between thoughts
+• Habit 2: Slow Down to Highlight key points
+• Habit 3: Use Declarative Statements`}
                         className="textarea"
                         style={{ height: '100%', minHeight: '200px' }}
                     />
@@ -489,7 +589,7 @@ Tips for fluency practice:
                         className="btn btn-secondary"
                         style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                     >
-                        💾 Save Script
+                        💾 Save
                     </button>
                     <button
                         onClick={onStartPractice}
