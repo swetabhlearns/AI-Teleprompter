@@ -1,28 +1,19 @@
-import { useEffect, useRef } from 'react';
-import CameraView from './CameraView';
-import FeedbackOverlay from './FeedbackOverlay';
+import { useEffect } from 'react';
 import { INTERVIEW_STATES } from '../hooks/useInterview';
 
 /**
  * Interview Session Component
- * Live interview with camera, question display, and recording
+ * Live interview with question display and audio recording
  */
 export function InterviewSession({
     interview,
-    stream,
-    onStreamReady,
-    mediaPipeReady,
-    mediaPipeLoading,
-    currentEyeContact,
-    currentPosture,
     isRecording,
     onStartRecording,
     onStopRecording,
     onTranscribe,
     onEvaluate,
     isProcessing,
-    isGeneratingAudio,
-    onPregenerate
+    isGeneratingAudio
 }) {
     const {
         state,
@@ -40,14 +31,14 @@ export function InterviewSession({
 
     // Auto-ask question when ready (with small delay to allow UI to update)
     useEffect(() => {
-        if (state === INTERVIEW_STATES.READY && stream) {
+        if (state === INTERVIEW_STATES.READY) {
             // Small delay to let UI render first
             const timer = setTimeout(() => {
                 askCurrentQuestion();
             }, 100);
             return () => clearTimeout(timer);
         }
-    }, [state, stream, askCurrentQuestion]);
+    }, [state, askCurrentQuestion]);
 
     const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);
@@ -56,9 +47,7 @@ export function InterviewSession({
     };
 
     const handleStartAnswer = () => {
-        if (stream) {
-            onStartRecording(stream);
-        }
+        onStartRecording();
     };
 
     const handleStopAnswer = async () => {
@@ -98,68 +87,7 @@ export function InterviewSession({
 
     return (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Camera View with Overlays */}
-            <div style={{
-                flex: 1,
-                position: 'relative',
-                borderRadius: '20px',
-                overflow: 'hidden',
-                minHeight: '400px'
-            }}>
-                <CameraView
-                    onStreamReady={onStreamReady}
-                    isRecording={isRecording}
-                />
-
-                {/* Processing Overlay - Shows when generating audio */}
-                {isGeneratingAudio && (
-                    <div style={{
-                        position: 'absolute',
-                        inset: 0,
-                        background: 'rgba(0,0,0,0.7)',
-                        backdropFilter: 'blur(8px)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        zIndex: 50
-                    }}>
-                        <div style={{
-                            width: '60px',
-                            height: '60px',
-                            border: '4px solid rgba(99,102,241,0.3)',
-                            borderTopColor: '#6366f1',
-                            borderRadius: '50%',
-                            animation: 'spin 1s linear infinite'
-                        }} />
-                        <div style={{
-                            marginTop: '20px',
-                            color: 'white',
-                            fontSize: '18px',
-                            fontWeight: '600'
-                        }}>
-                            Preparing question...
-                        </div>
-                        <div style={{
-                            marginTop: '8px',
-                            color: 'rgba(255,255,255,0.6)',
-                            fontSize: '14px'
-                        }}>
-                            Generating human-like voice
-                        </div>
-                    </div>
-                )}
-
-                {/* Question Overlay */}
-                <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 100%)',
-                    padding: '24px',
-                    zIndex: 10
-                }}>
+            <div className="glass-strong" style={{ flex: 1, padding: '24px', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     {/* Progress Bar */}
                     <div style={{
                         display: 'flex',
@@ -186,114 +114,114 @@ export function InterviewSession({
                         </span>
                     </div>
 
-                    {/* Question Display */}
-                    {currentQuestion && (
-                        <div>
-                            <div style={{
-                                display: 'inline-block',
-                                padding: '4px 12px',
-                                background: 'rgba(99,102,241,0.3)',
-                                borderRadius: '20px',
-                                fontSize: '11px',
-                                color: '#a5b4fc',
-                                marginBottom: '10px',
-                                fontWeight: '500'
-                            }}>
-                                {currentQuestion.category}
-                            </div>
-                            <h2 style={{
-                                color: 'white',
-                                fontSize: '22px',
-                                fontWeight: '600',
-                                lineHeight: '1.5',
-                                textShadow: '0 2px 10px rgba(0,0,0,0.5)'
-                            }}>
-                                {isSpeaking && <span style={{ marginRight: '10px' }}>🔊</span>}
-                                {currentQuestion.text}
-                            </h2>
-                        </div>
-                    )}
-
-                    {/* State Indicators */}
-                    {state === INTERVIEW_STATES.ASKING && (
-                        <div style={{
-                            marginTop: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            color: '#f59e0b',
-                            fontSize: '14px'
-                        }}>
-                            <div style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                background: '#f59e0b',
-                                animation: 'pulse 2s infinite'
-                            }} />
-                            Interviewer is speaking...
-                        </div>
-                    )}
-
-                    {state === INTERVIEW_STATES.EVALUATING && (
-                        <div style={{
-                            marginTop: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            color: '#6366f1',
-                            fontSize: '14px'
-                        }}>
-                            <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
-                            Analyzing your answer...
-                        </div>
-                    )}
-                </div>
-
-                {/* MediaPipe Feedback */}
-                <FeedbackOverlay
-                    eyeContact={currentEyeContact}
-                    posture={currentPosture}
-                    isActive={state === INTERVIEW_STATES.LISTENING && isRecording}
-                    mediaPipeReady={mediaPipeReady}
-                    mediaPipeLoading={mediaPipeLoading}
-                />
-
-                {/* Answer Timer (bottom left) */}
-                {state === INTERVIEW_STATES.LISTENING && (
                     <div style={{
-                        position: 'absolute',
-                        bottom: '20px',
-                        left: '20px',
-                        padding: '12px 20px',
-                        background: isRecording ? 'rgba(239,68,68,0.9)' : 'rgba(0,0,0,0.8)',
-                        borderRadius: '50px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        zIndex: 10
+                        padding: '20px',
+                        borderRadius: '20px',
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.08)'
                     }}>
-                        {isRecording && (
+                        {isGeneratingAudio && (
                             <div style={{
-                                width: '10px',
-                                height: '10px',
-                                borderRadius: '50%',
-                                background: 'white',
-                                animation: 'blink 1s infinite'
-                            }} />
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                color: '#c4b5fd',
+                                marginBottom: '16px'
+                            }}>
+                                <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+                                <span>Preparing question...</span>
+                            </div>
                         )}
-                        <span style={{
-                            color: 'white',
-                            fontFamily: 'monospace',
-                            fontSize: '18px',
-                            fontWeight: '600'
-                        }}>
-                            {formatTime(answerTime)}
-                        </span>
-                    </div>
-                )}
-            </div>
 
+                        {currentQuestion && (
+                            <div>
+                                <div style={{
+                                    display: 'inline-block',
+                                    padding: '4px 12px',
+                                    background: 'rgba(99,102,241,0.3)',
+                                    borderRadius: '20px',
+                                    fontSize: '11px',
+                                    color: '#a5b4fc',
+                                    marginBottom: '10px',
+                                    fontWeight: '500'
+                                }}>
+                                    {currentQuestion.category}
+                                </div>
+                                <h2 style={{
+                                    color: 'white',
+                                    fontSize: '22px',
+                                    fontWeight: '600',
+                                    lineHeight: '1.5'
+                                }}>
+                                    {isSpeaking && <span style={{ marginRight: '10px' }}>🔊</span>}
+                                    {currentQuestion.text}
+                                </h2>
+                            </div>
+                        )}
+
+                        {state === INTERVIEW_STATES.ASKING && (
+                            <div style={{
+                                marginTop: '16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                color: '#f59e0b',
+                                fontSize: '14px'
+                            }}>
+                                <div style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '50%',
+                                    background: '#f59e0b',
+                                    animation: 'pulse 2s infinite'
+                                }} />
+                                Interviewer is speaking...
+                            </div>
+                        )}
+
+                        {state === INTERVIEW_STATES.EVALUATING && (
+                            <div style={{
+                                marginTop: '16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                color: '#6366f1',
+                                fontSize: '14px'
+                            }}>
+                                <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                                Analyzing your answer...
+                            </div>
+                        )}
+
+                        {state === INTERVIEW_STATES.LISTENING && (
+                            <div style={{
+                                marginTop: '16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '12px'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.7)' }}>
+                                    <div style={{
+                                        width: '10px',
+                                        height: '10px',
+                                        borderRadius: '50%',
+                                        background: isRecording ? '#ef4444' : '#6366f1'
+                                    }} />
+                                    <span>Answer time</span>
+                                </div>
+                                <span style={{
+                                    color: 'white',
+                                    fontFamily: 'monospace',
+                                    fontSize: '18px',
+                                    fontWeight: '600'
+                                }}>
+                                    {formatTime(answerTime)}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
             {/* Controls */}
             <div className="glass-strong" style={{ padding: '20px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

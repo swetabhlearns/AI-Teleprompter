@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
- * Custom hook for audio/video recording with Voice Activity Detection
- * Records both video (for playback) and audio-only (for transcription)
+ * Custom hook for audio-only recording with Voice Activity Detection
+ * Records microphone audio for transcription and timing analysis.
  */
 export function useRecorder() {
     const [isRecording, setIsRecording] = useState(false);
@@ -11,70 +11,129 @@ export function useRecorder() {
     const [audioLevel, setAudioLevel] = useState(0);
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [recordedBlob, setRecordedBlob] = useState(null);
-    const [audioBlob, setAudioBlob] = useState(null); // Audio-only for transcription
+    const [audioBlob, setAudioBlob] = useState(null);
 
     const mediaRecorderRef = useRef(null);
-    const audioRecorderRef = useRef(null); // Separate audio-only recorder
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
     const streamRef = useRef(null);
-    const audioStreamRef = useRef(null); // Audio-only stream
     const chunksRef = useRef([]);
-    const audioChunksRef = useRef([]); // Audio-only chunks
     const durationIntervalRef = useRef(null);
     const vadIntervalRef = useRef(null);
-    const volumeHistoryRef = useRef([]); // Volume samples for analysis
+    const volumeHistoryRef = useRef([]);
+    const startTimeRef = useRef(0);
+    const finishResolveRef = useRef(null);
 
-    // Voice Activity Detection thresholds
-    const VAD_THRESHOLD = 15; // Minimum audio level to consider as speech
-    const VAD_SMOOTHING = 0.8; // Smoothing factor for audio level
+    const VAD_THRESHOLD = 15;
+    const VAD_SMOOTHING = 0.8;
+
+    const stopIntervals = useCallback(() => {
+        if (durationIntervalRef.current) {
+            clearInterval(durationIntervalRef.current);
+            durationIntervalRef.current = null;
+        }
+        if (vadIntervalRef.current) {
+            clearInterval(vadIntervalRef.current);
+            vadIntervalRef.current = null;
+        }
+    }, []);
+
+    const cleanupStream = useCallback(() => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => {
+                try {
+                    track.stop();
+                } catch {
+                    // ignore cleanup errors
+                }
+            });
+            streamRef.current = null;
+        }
+
+        if (audioContextRef.current) {
+            audioContextRef.current.close().catch(() => {});
+            audioContextRef.current = null;
+        }
+
+        analyserRef.current = null;
+    }, []);
+
+    const resolveRecording = useCallback((blob, durationMs) => {
+        setRecordedBlob(blob);
+        setAudioBlob(blob);
+        setIsRecording(false);
+        setIsPaused(false);
+        setIsSpeaking(false);
+        setAudioLevel(0);
+        setDuration(0);
+        stopIntervals();
+        cleanupStream();
+
+        const resolve = finishResolveRef.current;
+        finishResolveRef.current = null;
+
+        if (resolve) {
+            resolve({
+                blob,
+                duration: durationMs,
+                volumeHistory: [...volumeHistoryRef.current]
+            });
+        }
+    }, [cleanupStream, stopIntervals]);
+
+    const startVADMonitoring = useCallback(() => {
+        if (!analyserRef.current) return;
+
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        let smoothedLevel = 0;
+        let sampleCounter = 0;
+
+        volumeHistoryRef.current = [];
+
+        vadIntervalRef.current = setInterval(() => {
+            if (!analyserRef.current) return;
+
+            analyserRef.current.getByteFrequencyData(dataArray);
+
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+            }
+
+            const average = sum / bufferLength;
+            smoothedLevel = smoothedLevel * VAD_SMOOTHING + average * (1 - VAD_SMOOTHING);
+            const roundedLevel = Math.round(smoothedLevel);
+
+            setAudioLevel(roundedLevel);
+            setIsSpeaking(smoothedLevel > VAD_THRESHOLD);
+
+            sampleCounter++;
+            if (sampleCounter % 4 === 0) {
+                volumeHistoryRef.current.push({
+                    timestamp: Date.now(),
+                    level: roundedLevel
+                });
+            }
+        }, 100);
+    }, []);
 
     /**
      * Start recording with VAD
-     * @param {MediaStream} existingStream - Optional existing media stream (ignored, we always get fresh)
      */
-    const startRecording = useCallback(async (existingStream = null) => {
+    const startRecording = useCallback(async () => {
         try {
-            console.log('Starting recording...');
-
-            // ALWAYS get a fresh stream for recording to avoid codec issues
-            // The existing stream may have been used by MediaPipe which can cause conflicts
-            let stream;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    },
-                    video: true
-                });
-                console.log('Got fresh media stream');
-            } catch (mediaErr) {
-                console.error('Failed to get media stream:', mediaErr);
-                throw mediaErr;
-            }
-
-            // Verify stream has active tracks
-            const audioTracks = stream.getAudioTracks();
-            const videoTracks = stream.getVideoTracks();
-            console.log('Audio tracks:', audioTracks.length, 'Video tracks:', videoTracks.length);
-
-            if (audioTracks.length === 0) {
-                console.warn('No audio tracks available');
-            }
-            if (videoTracks.length === 0) {
-                console.warn('No video tracks available');
-            }
-
-            // Check track states
-            audioTracks.forEach((t, i) => console.log(`Audio track ${i}: ${t.label}, enabled: ${t.enabled}, readyState: ${t.readyState}`));
-            videoTracks.forEach((t, i) => console.log(`Video track ${i}: ${t.label}, enabled: ${t.enabled}, readyState: ${t.readyState}`));
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
 
             streamRef.current = stream;
             chunksRef.current = [];
 
-            // Set up audio analysis for VAD
             try {
                 audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
                 analyserRef.current = audioContextRef.current.createAnalyser();
@@ -82,45 +141,31 @@ export function useRecorder() {
 
                 const source = audioContextRef.current.createMediaStreamSource(stream);
                 source.connect(analyserRef.current);
-                console.log('Audio context set up for VAD');
             } catch (audioErr) {
                 console.warn('Failed to set up audio analysis:', audioErr);
-                // Continue without VAD
             }
 
-            // Try to create MediaRecorder - start with no options, let browser decide
             let mediaRecorder = null;
+            const mimeTypes = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/ogg',
+                'audio/mp4'
+            ];
 
-            // First try: let browser choose
-            try {
-                mediaRecorder = new MediaRecorder(stream);
-                console.log('MediaRecorder created with browser defaults. MimeType:', mediaRecorder.mimeType);
-            } catch (e1) {
-                console.log('Browser defaults failed, trying specific mimeTypes...');
-
-                // Try specific mimeTypes
-                const mimeTypes = [
-                    'video/webm',
-                    'video/webm;codecs=vp8',
-                    'audio/webm',
-                    'video/mp4'
-                ];
-
-                for (const mimeType of mimeTypes) {
-                    if (MediaRecorder.isTypeSupported(mimeType)) {
-                        try {
-                            mediaRecorder = new MediaRecorder(stream, { mimeType });
-                            console.log('MediaRecorder created with:', mimeType);
-                            break;
-                        } catch (e2) {
-                            console.log(`Failed with ${mimeType}:`, e2.message);
-                        }
+            for (const mimeType of mimeTypes) {
+                if (MediaRecorder.isTypeSupported(mimeType)) {
+                    try {
+                        mediaRecorder = new MediaRecorder(stream, { mimeType });
+                        break;
+                    } catch {
+                        // keep trying
                     }
                 }
             }
 
             if (!mediaRecorder) {
-                throw new Error('Could not create MediaRecorder with any supported format');
+                mediaRecorder = new MediaRecorder(stream);
             }
 
             mediaRecorderRef.current = mediaRecorder;
@@ -135,258 +180,52 @@ export function useRecorder() {
                 console.error('MediaRecorder error:', event.error);
             };
 
-            mediaRecorder.onstop = () => {
-                // This is a default handler, mainly for debugging if stop is called manually
-                // The main logic is handled in stopRecording's onstop override
-                console.log('Default onstop callback fired');
-            };
-
-            // === AUDIO-ONLY RECORDER (for transcription - much smaller file) ===
-            const audioOnlyStream = new MediaStream(stream.getAudioTracks());
-            audioStreamRef.current = audioOnlyStream;
-            audioChunksRef.current = [];
-
-            let audioRecorder = null;
-            const audioMimeTypes = ['audio/webm', 'audio/webm;codecs=opus', 'audio/ogg', 'audio/mp4'];
-
-            for (const mimeType of audioMimeTypes) {
-                if (MediaRecorder.isTypeSupported(mimeType)) {
-                    try {
-                        audioRecorder = new MediaRecorder(audioOnlyStream, { mimeType });
-                        console.log('Audio recorder created with:', mimeType);
-                        break;
-                    } catch (e) {
-                        console.log(`Audio recorder failed with ${mimeType}`);
-                    }
-                }
-            }
-
-            if (audioRecorder) {
-                audioRecorderRef.current = audioRecorder;
-
-                audioRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunksRef.current.push(event.data);
-                    }
-                };
-
-                audioRecorder.onstop = () => {
-                    const audioMimeType = audioRecorder.mimeType || 'audio/webm';
-                    const blob = new Blob(audioChunksRef.current, { type: audioMimeType });
-                    console.log('Audio recording stopped. Size:', blob.size, 'bytes (for transcription)');
-                    setAudioBlob(blob);
-                };
-
-                audioRecorder.start(1000);
-                console.log('Audio-only recorder started');
-            } else {
-                console.warn('Could not create audio-only recorder, will use video for transcription');
-            }
-
-            // Start video recorder
             mediaRecorder.start(1000);
-            console.log('MediaRecorder started successfully!');
-
             setIsRecording(true);
             setIsPaused(false);
             setDuration(0);
+            startTimeRef.current = Date.now();
 
-            // Start duration counter
-            const startTime = Date.now();
             durationIntervalRef.current = setInterval(() => {
-                setDuration(Date.now() - startTime);
+                setDuration(Date.now() - startTimeRef.current);
             }, 100);
 
-            // Start VAD monitoring
             startVADMonitoring();
-
         } catch (err) {
             console.error('Recording start error:', err);
-            console.error('Error name:', err.name);
-            console.error('Error message:', err.message);
             throw err;
         }
-    }, []);
-
-    /**
-     * Start Voice Activity Detection monitoring
-     */
-    const startVADMonitoring = useCallback(() => {
-        if (!analyserRef.current) return;
-
-        const bufferLength = analyserRef.current.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        let smoothedLevel = 0;
-        let sampleCounter = 0;
-
-        // Reset volume history
-        volumeHistoryRef.current = [];
-
-        vadIntervalRef.current = setInterval(() => {
-            analyserRef.current.getByteFrequencyData(dataArray);
-
-            // Calculate average volume
-            let sum = 0;
-            for (let i = 0; i < bufferLength; i++) {
-                sum += dataArray[i];
-            }
-            const average = sum / bufferLength;
-
-            // Smooth the level
-            smoothedLevel = smoothedLevel * VAD_SMOOTHING + average * (1 - VAD_SMOOTHING);
-
-            setAudioLevel(Math.round(smoothedLevel));
-            setIsSpeaking(smoothedLevel > VAD_THRESHOLD);
-
-            // Record volume sample every 200ms (every 4th interval at 50ms)
-            sampleCounter++;
-            if (sampleCounter % 4 === 0) {
-                volumeHistoryRef.current.push({
-                    timestamp: Date.now(),
-                    level: Math.round(smoothedLevel)
-                });
-            }
-        }, 50); // Check every 50ms
-    }, []);
+    }, [startVADMonitoring]);
 
     /**
      * Stop recording
-     * @returns {Promise<{videoBlob: Blob, audioBlob: Blob}>} Recorded blobs
      */
     const stopRecording = useCallback(() => {
-        console.log('stopRecording called, isRecording:', isRecording);
-
         return new Promise((resolve) => {
-            // Capture final duration before clearing intervals - CRITICAL FIX
+            finishResolveRef.current = resolve;
             const finalDuration = duration;
 
-            // Clear intervals
-            if (durationIntervalRef.current) {
-                clearInterval(durationIntervalRef.current);
-                durationIntervalRef.current = null;
-            }
-            if (vadIntervalRef.current) {
-                clearInterval(vadIntervalRef.current);
-                vadIntervalRef.current = null;
-            }
+            stopIntervals();
 
-            // Define cleanup function to be called AFTER data is ready
-            const performCleanup = () => {
-                console.log('Performing stream cleanup...');
+            const finalize = () => {
+                const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm';
+                const blob = chunksRef.current.length > 0
+                    ? new Blob(chunksRef.current, { type: mimeType })
+                    : null;
 
-                // Stop audio-only recorder if still running
-                if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
-                    audioRecorderRef.current.stop();
-                }
-
-                // Stop and cleanup streams
-                if (streamRef.current) {
-                    streamRef.current.getTracks().forEach(track => {
-                        try { track.stop(); } catch (e) { }
-                    });
-                    streamRef.current = null;
-                }
-                if (audioStreamRef.current) {
-                    audioStreamRef.current.getTracks().forEach(track => {
-                        try { track.stop(); } catch (e) { }
-                    });
-                    audioStreamRef.current = null;
-                }
-
-                // Close audio context
-                if (audioContextRef.current) {
-                    audioContextRef.current.close().catch(() => { });
-                    audioContextRef.current = null;
-                }
+                mediaRecorderRef.current = null;
+                chunksRef.current = [];
+                resolveRecording(blob, finalDuration);
             };
 
-            // Helper to resolve promise with all data
-            const resolveWithData = (videoBlob, audioBlob) => {
-                setRecordedBlob(videoBlob);
-                setAudioBlob(audioBlob);
-
-                // Reset state
-                setIsRecording(false);
-                setIsPaused(false);
-                setIsSpeaking(false);
-                setAudioLevel(0);
-                setDuration(0);
-
-                // CLEANUP NOW
-                performCleanup();
-
-                resolve({
-                    blob: audioBlob,
-                    videoBlob: videoBlob,
-                    duration: finalDuration,
-                    volumeHistory: [...volumeHistoryRef.current]
-                });
-            };
-
-            // If we have a media recorder that's recording, stop it and wait for data
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                console.log('Stopping MediaRecorder');
-
-                // Track when both recorders have stopped
-                let videoBlob = null;
-                let audioBlobLocal = null;
-                let videoStopped = false;
-                let audioStopped = false;
-
-                const tryResolve = () => {
-                    if (videoStopped && audioStopped) {
-                        // Prefer audio-only blob (smaller) for transcription
-                        const finalBlob = audioBlobLocal && audioBlobLocal.size > 0
-                            ? audioBlobLocal
-                            : videoBlob;
-
-                        console.log(`Using ${audioBlobLocal && audioBlobLocal.size > 0 ? 'AUDIO-ONLY' : 'VIDEO'} blob for transcription.`);
-                        console.log(`Size: ${finalBlob?.size || 0} bytes`);
-                        resolveWithData(videoBlob, finalBlob);
-                    }
-                };
-
-                // Stop audio recorder first
-                if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
-                    audioRecorderRef.current.onstop = () => {
-                        const audioMimeType = audioRecorderRef.current.mimeType || 'audio/webm';
-                        audioBlobLocal = new Blob(audioChunksRef.current, { type: audioMimeType });
-                        console.log('Audio-only blob size:', audioBlobLocal.size, 'bytes');
-                        audioStopped = true;
-                        tryResolve();
-                    };
-                    audioRecorderRef.current.stop();
-                } else {
-                    audioStopped = true;
-                }
-
-                mediaRecorderRef.current.onstop = () => {
-                    const mimeType = mediaRecorderRef.current.mimeType || 'video/webm';
-                    videoBlob = new Blob(chunksRef.current, { type: mimeType });
-                    console.log('Video blob size:', videoBlob.size, 'bytes');
-                    videoStopped = true;
-                    tryResolve();
-                };
-
+                mediaRecorderRef.current.onstop = finalize;
                 mediaRecorderRef.current.stop();
             } else {
-                console.log('No active MediaRecorder, resolving with existing chunks');
-
-                const videoBlob = chunksRef.current.length > 0
-                    ? new Blob(chunksRef.current, { type: 'video/webm' })
-                    : null;
-
-                // Try to use existing audio chunks
-                const audioBlobLocal = audioChunksRef.current.length > 0
-                    ? new Blob(audioChunksRef.current, { type: 'audio/webm' })
-                    : null;
-
-                const finalBlob = audioBlobLocal && audioBlobLocal.size > 0 ? audioBlobLocal : videoBlob;
-
-                resolveWithData(videoBlob, finalBlob);
+                finalize();
             }
         });
-    }, [isRecording, duration]);
+    }, [duration, resolveRecording, stopIntervals]);
 
     /**
      * Pause recording
@@ -395,9 +234,9 @@ export function useRecorder() {
         if (mediaRecorderRef.current && isRecording && !isPaused) {
             mediaRecorderRef.current.pause();
             setIsPaused(true);
-
             if (durationIntervalRef.current) {
                 clearInterval(durationIntervalRef.current);
+                durationIntervalRef.current = null;
             }
         }
     }, [isRecording, isPaused]);
@@ -417,47 +256,30 @@ export function useRecorder() {
                 setDuration(pausedDuration + (Date.now() - resumeTime));
             }, 100);
         }
-    }, [isRecording, isPaused, duration]);
+    }, [duration, isPaused, isRecording]);
 
     /**
-     * Get audio blob from video recording
-     * @param {Blob} videoBlob - Video blob
-     * @returns {Promise<Blob>} Audio-only blob
+     * Audio-only blob passthrough for transcription
      */
-    const extractAudio = useCallback(async (videoBlob) => {
-        // For Groq transcription, we can send the WebM directly
-        // as it contains the audio track
-        return videoBlob;
-    }, []);
+    const extractAudio = useCallback(async (blob) => blob, []);
 
-    /**
-     * Get current stream video track
-     */
-    const getVideoTrack = useCallback(() => {
-        if (streamRef.current) {
-            const videoTracks = streamRef.current.getVideoTracks();
-            return videoTracks.length > 0 ? videoTracks[0] : null;
-        }
-        return null;
-    }, []);
-
-    // Cleanup on unmount
     useEffect(() => {
         return () => {
-            if (durationIntervalRef.current) {
-                clearInterval(durationIntervalRef.current);
-            }
-            if (vadIntervalRef.current) {
-                clearInterval(vadIntervalRef.current);
-            }
+            stopIntervals();
             if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current.getTracks().forEach((track) => {
+                    try {
+                        track.stop();
+                    } catch {
+                        // ignore cleanup errors
+                    }
+                });
             }
             if (audioContextRef.current) {
-                audioContextRef.current.close();
+                audioContextRef.current.close().catch(() => {});
             }
         };
-    }, []);
+    }, [stopIntervals]);
 
     return {
         isRecording,
@@ -466,13 +288,12 @@ export function useRecorder() {
         audioLevel,
         isSpeaking,
         recordedBlob,
-        audioBlob, // Audio-only for transcription (smaller)
+        audioBlob,
         startRecording,
         stopRecording,
         pauseRecording,
         resumeRecording,
-        extractAudio,
-        getVideoTrack
+        extractAudio
     };
 }
 

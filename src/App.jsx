@@ -1,9 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { usePostHog } from 'posthog-js/react';
-import CameraView from './components/CameraView';
 import Teleprompter from './components/Teleprompter';
 import ScriptEditor from './components/ScriptEditor';
-import FeedbackOverlay from './components/FeedbackOverlay';
 import AnalysisView from './components/AnalysisView';
 import InterviewSetup from './components/InterviewSetup';
 import InterviewSession from './components/InterviewSession';
@@ -11,7 +9,6 @@ import InterviewResults from './components/InterviewResults';
 import ExtemporePractice from './components/ExtemporePractice';
 import WarmUpGuide from './components/WarmUpGuide';
 import { useSession } from './contexts/SessionContext';
-import { useMediaPipe } from './hooks/useMediaPipe';
 import { useRecorder } from './hooks/useRecorder';
 import { useGroq } from './hooks/useGroq';
 import { useInterview, INTERVIEW_STATES } from './hooks/useInterview';
@@ -20,10 +17,45 @@ import { generatePerformanceReport } from './utils/analysisEngine';
 import { generateStutteringReport } from './utils/stutteringAnalyzer';
 import { formatDuration } from './utils/formatters';
 
+const SCRIPT_PREFERENCES_KEY = 'teleprompter_script_preferences_v1';
+const DEFAULT_SCRIPT_PREFERENCES = {
+  showSections: true,
+  showPauses: true,
+  showSlow: true,
+  showFast: true,
+  showEmphasis: true,
+  showEnunciation: true,
+  distractionFree: false
+};
+
+function normalizeScriptPreferences(preferences = {}) {
+  const resolved = {
+    ...DEFAULT_SCRIPT_PREFERENCES,
+    ...preferences
+  };
+
+  if (typeof preferences.showTempo === 'boolean') {
+    resolved.showSlow = preferences.showTempo;
+    resolved.showFast = preferences.showTempo;
+  }
+
+  return resolved;
+}
+
+function loadScriptPreferences() {
+  try {
+    const raw = localStorage.getItem(SCRIPT_PREFERENCES_KEY);
+    if (!raw) return DEFAULT_SCRIPT_PREFERENCES;
+    return normalizeScriptPreferences(JSON.parse(raw));
+  } catch {
+    return DEFAULT_SCRIPT_PREFERENCES;
+  }
+}
+
 function App() {
   const posthog = usePostHog();
 
-  // Session context for recording, stream, and tracking state
+  // Session context for recording state
   const session = useSession();
 
   // Tab navigation
@@ -38,33 +70,24 @@ function App() {
 
   // Script state
   const [script, setScript] = useState('');
+  const [scriptPreferences, setScriptPreferences] = useState(loadScriptPreferences);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCRIPT_PREFERENCES_KEY, JSON.stringify(scriptPreferences));
+    } catch (error) {
+      console.warn('Failed to persist script preferences:', error);
+    }
+  }, [scriptPreferences]);
 
   // Practice state
   const [isPracticing, setIsPracticing] = useState(false);
-
-  // Real-time tracking state (local to avoid context re-renders)
-  const [currentEyeContact, setCurrentEyeContact] = useState(null);
-  const [currentPosture, setCurrentPosture] = useState(null);
-  const lastTrackingUpdateRef = useRef(0);
-
-  // Tracking metrics for analysis (accumulated over session)
-  const metricsRef = useRef({
-    eyeContactFrames: 0,
-    totalFrames: 0,
-    postureScores: []
-  });
+  const [practiceSpeed, setPracticeSpeed] = useState(20);
+  const [practiceSessionKey, setPracticeSessionKey] = useState(0);
 
   // Analysis state
   const [analysis, setAnalysis] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  // Hooks
-  const {
-    isReady: mediaPipeReady,
-    isLoading: mediaPipeLoading,
-    error: mediaPipeError,
-    processFrame
-  } = useMediaPipe();
 
   const {
     isRecording,
@@ -88,100 +111,17 @@ function App() {
     isSpeaking: kokoroTTS.isSpeaking
   });
 
-  // Video element ref for MediaPipe processing
-  const videoRef = useRef(null);
-  const animationFrameRef = useRef(null);
-
-  // Handle stream ready from camera
-  const handleStreamReady = useCallback((newStream) => {
-    session.setStream(newStream);
-  }, [session.setStream]);
-
-  // Set video ref when practice or interview tab is active
-  useEffect(() => {
-    if (activeTab === 'practice' || activeTab === 'extempore' || (activeTab === 'interview' && interview.state !== INTERVIEW_STATES.IDLE && interview.state !== INTERVIEW_STATES.SETUP)) {
-      const timer = setTimeout(() => {
-        const videoEl = document.querySelector('.camera-video');
-        if (videoEl) {
-          videoRef.current = videoEl;
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [activeTab, interview.state]);
-
-  // MediaPipe processing loop
-  useEffect(() => {
-    if (!isPracticing || !mediaPipeReady || !videoRef.current) {
-      return;
-    }
-
-    let isRunning = true;
-
-    const processLoop = () => {
-      if (!isRunning) return;
-
-      if (videoRef.current && videoRef.current.readyState >= 2) {
-        const result = processFrame(videoRef.current);
-
-        if (result) {
-          // Update local metrics ref for later analysis (no re-render)
-          metricsRef.current.totalFrames++;
-          if (result.eyeContact?.isLookingAtCamera) {
-            metricsRef.current.eyeContactFrames++;
-          }
-          if (result.posture?.score !== undefined) {
-            metricsRef.current.postureScores.push(result.posture.score);
-          }
-
-          // Throttled UI updates (local state)
-          const now = Date.now();
-          if (now - lastTrackingUpdateRef.current > 100) {
-            lastTrackingUpdateRef.current = now;
-            setCurrentEyeContact(result.eyeContact);
-            setCurrentPosture(result.posture);
-          }
-        }
-      }
-
-      if (isRunning) {
-        animationFrameRef.current = requestAnimationFrame(processLoop);
-      }
-    };
-
-    processLoop();
-
-    return () => {
-      isRunning = false;
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isPracticing, mediaPipeReady, processFrame]);
-
-  // Start practice session
-  const handleStartPractice = async () => {
+  // Open practice session without starting recording
+  const handleEnterPractice = () => {
     setActiveTab('practice');
 
     if (posthog) posthog.capture('practice_started');
 
     setAnalysis(null);
     session.resetSession();
-    setCurrentEyeContact(null);
-    setCurrentPosture(null);
-    lastTrackingUpdateRef.current = 0;
-    metricsRef.current = {
-      eyeContactFrames: 0,
-      totalFrames: 0,
-      postureScores: []
-    };
-
-    setTimeout(() => {
-      setIsPracticing(true);
-      if (session.stream) {
-        startRecording(session.stream);
-      }
-    }, 500);
+    setIsPracticing(false);
+    setPracticeSpeed(20);
+    setPracticeSessionKey((prev) => prev + 1);
   };
 
   // Cancel practice without saving
@@ -189,14 +129,31 @@ function App() {
     setIsPracticing(false);
     await stopRecording();
     session.resetSession();
-    setCurrentEyeContact(null);
-    setCurrentPosture(null);
-    metricsRef.current = {
-      eyeContactFrames: 0,
-      totalFrames: 0,
-      postureScores: []
-    };
+    setPracticeSpeed(20);
     setActiveTab('script');
+  };
+
+  const handleStartPracticeRecording = async () => {
+    setIsPracticing(true);
+    try {
+      await startRecording();
+    } catch (err) {
+      console.error('Practice recording failed to start:', err);
+      setIsPracticing(false);
+    }
+  };
+
+  const handleResetPracticeScroll = () => {
+    setPracticeSpeed(20);
+    setPracticeSessionKey((prev) => prev + 1);
+  };
+
+  const handleDiscardPractice = () => {
+    setIsPracticing(false);
+    session.resetSession();
+    setAnalysis(null);
+    setPracticeSpeed(20);
+    setPracticeSessionKey((prev) => prev + 1);
   };
 
   // Stop practice - save recording for later analysis
@@ -207,30 +164,15 @@ function App() {
       // Use the returned object from stopRecording (now contains duration)
       const result = await stopRecording();
 
-      // Handle both new object structure and potential legacy/fallback blob
       const recordedBlob = result.blob || result;
       const finalDuration = result.duration || duration;
 
-      // Calculate metrics from local metricsRef
-      const eyeContactPercentage = metricsRef.current.totalFrames > 0
-        ? Math.round((metricsRef.current.eyeContactFrames / metricsRef.current.totalFrames) * 100)
-        : 0;
-
-      const avgPosture = metricsRef.current.postureScores.length > 0
-        ? Math.round(metricsRef.current.postureScores.reduce((a, b) => a + b, 0) / metricsRef.current.postureScores.length)
-        : 0;
-
-      const metrics = { eyeContactPercentage, avgPosture };
-
-      // Save recording and metrics to session context
-      // result now contains volumeHistory from useRecorder
-      session.saveRecording(recordedBlob, finalDuration, metrics, result.volumeHistory);
+      // Save recording and volume history to session context
+      session.saveRecording(recordedBlob, finalDuration, result.volumeHistory);
 
       if (posthog) {
         posthog.capture('practice_stopped', {
           duration: finalDuration,
-          eyeContact: eyeContactPercentage,
-          posture: avgPosture,
           volume_samples: result.volumeHistory?.length || 0
         });
       }
@@ -249,19 +191,12 @@ function App() {
 
     setAnalysis(null);
     session.resetSession();
-    setCurrentEyeContact(null);
-    setCurrentPosture(null);
-    lastTrackingUpdateRef.current = 0;
-    metricsRef.current = {
-      eyeContactFrames: 0,
-      totalFrames: 0,
-      postureScores: []
-    };
 
     setIsPracticing(true);
-    if (session.stream) {
-      startRecording(session.stream);
-    }
+    startRecording().catch((err) => {
+      console.error('Extempore recording failed to start:', err);
+      setIsPracticing(false);
+    });
   };
 
   // Start analysis (user-triggered)
@@ -336,11 +271,6 @@ function App() {
         words: transcriptData.words || [],
         stutteringReport,
         durationMs: finalDuration,
-        eyeContactPercentage: session.savedMetrics?.eyeContactPercentage || 0,
-        stutteringReport,
-        durationMs: finalDuration,
-        eyeContactPercentage: session.savedMetrics?.eyeContactPercentage || 0,
-        postureScore: session.savedMetrics?.avgPosture || 0,
         volumeHistory: session.volumeHistory || [] // Pass volume history for analysis
       });
 
@@ -432,22 +362,8 @@ function App() {
           </nav>
 
           <div className="flex items-center" style={{ gap: '8px', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-            {mediaPipeLoading ? (
-              <>
-                <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
-                <span>Loading AI...</span>
-              </>
-            ) : mediaPipeReady ? (
-              <>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
-                <span>Tracking Ready</span>
-              </>
-            ) : (
-              <>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b' }} />
-                <span>Tracking Limited</span>
-              </>
-            )}
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
+            <span>Audio only</span>
           </div>
         </div>
       </header>
@@ -470,7 +386,9 @@ function App() {
             <ScriptEditor
               script={script}
               onScriptChange={setScript}
-              onStartPractice={handleStartPractice}
+              onStartPractice={handleEnterPractice}
+              notationPreferences={scriptPreferences}
+              onNotationPreferencesChange={setScriptPreferences}
             />
           </div>
         )}
@@ -499,12 +417,6 @@ function App() {
               interview.state !== INTERVIEW_STATES.COMPLETE) && (
                 <InterviewSession
                   interview={interview}
-                  stream={stream}
-                  onStreamReady={handleStreamReady}
-                  mediaPipeReady={mediaPipeReady}
-                  mediaPipeLoading={mediaPipeLoading}
-                  currentEyeContact={currentEyeContact}
-                  currentPosture={currentPosture}
                   isRecording={isRecording}
                   onStartRecording={startRecording}
                   onStopRecording={stopRecording}
@@ -512,7 +424,6 @@ function App() {
                   onEvaluate={evaluateAnswer}
                   isProcessing={isTranscribing}
                   isGeneratingAudio={kokoroTTS.isGenerating}
-                  onPregenerate={kokoroTTS.pregenerate}
                 />
               )}
 
@@ -531,150 +442,136 @@ function App() {
         {activeTab === 'extempore' && (
           <div className="flex-1 flex flex-col">
             <ExtemporePractice
-              stream={session.stream}
-              onStreamReady={handleStreamReady}
-              mediaPipeReady={mediaPipeReady}
-              mediaPipeLoading={mediaPipeLoading}
-              currentEyeContact={currentEyeContact}
-              currentPosture={currentPosture}
               isRecording={isRecording}
               onStartRecording={handleStartExtempore}
               onStopRecording={handleStopPractice}
-              onTranscribe={transcribeAudio}
               onAnalyze={handleStartAnalysis}
               generateTopics={generateExtemporeTopics}
-              isLoading={isTranscribing}
             />
           </div>
         )}
 
         {/* Practice Tab */}
         {activeTab === 'practice' && (
-          <div className="flex-1 flex flex-col gap-5">
-            {/* Camera with overlays */}
-            <div style={{ flex: 1, position: 'relative', borderRadius: '20px', overflow: 'hidden', minHeight: '400px' }}>
-              <CameraView
-                onStreamReady={handleStreamReady}
-                isRecording={isRecording}
-              />
+          <div className="practice-fullscreen">
+            <div className="practice-fullscreen-header">
+              <div>
+                <span className="eyebrow">Audio Practice</span>
+                <h3>Focus on speech, timing, and clarity</h3>
+              </div>
 
+              <button onClick={handleCancelPractice} className="btn btn-secondary practice-exit-button">
+                Exit Practice
+              </button>
+            </div>
+
+            <div className="practice-fullscreen-stage">
               <Teleprompter
+                key={practiceSessionKey}
                 script={script}
-                isActive={isPracticing}
+                isActive={isRecording}
                 isSpeaking={isSpeaking}
                 audioLevel={audioLevel}
-              />
-
-              <FeedbackOverlay
-                eyeContact={currentEyeContact}
-                posture={currentPosture}
-                isActive={isPracticing}
-                mediaPipeReady={mediaPipeReady}
-                mediaPipeLoading={mediaPipeLoading}
+                notationPreferences={scriptPreferences}
+                speed={practiceSpeed}
+                onSpeedChange={setPracticeSpeed}
+                variant="overlay"
+                showControls={false}
+                showHints={false}
+                showLiveIndicator={false}
               />
             </div>
 
-            {/* Controls */}
-            <div className="glass-strong" style={{ padding: '20px 24px' }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center" style={{ gap: '16px' }}>
-                  {isRecording && (
-                    <div className="flex items-center" style={{ gap: '8px', color: 'white' }}>
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 2s infinite' }} />
-                      <span style={{ fontFamily: 'monospace', fontSize: '18px', fontWeight: '600' }}>
-                        {formatDuration(duration)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Show saved recording info */}
-                  {!isPracticing && session.hasRecording && (
-                    <div style={{ fontSize: '14px', color: '#10b981' }}>
-                      ✓ Recording saved ({formatDuration(session.sessionDuration)})
-                    </div>
-                  )}
-
-                  {mediaPipeError && (
-                    <div style={{ fontSize: '12px', color: '#f59e0b' }}>
-                      ⚠️ Tracking unavailable
-                    </div>
-                  )}
+            <div className="practice-bottom-dock glass-strong">
+              <div className="practice-dock-group">
+                <span className="practice-dock-label">Speed</span>
+                <button
+                  type="button"
+                  className="teleprompter-control-button"
+                  onClick={() => setPracticeSpeed((prev) => Math.max(10, prev - 10))}
+                >
+                  −
+                </button>
+                <div className="practice-dock-speed">
+                  <div className="teleprompter-speed-track">
+                    <div
+                      className="teleprompter-speed-fill"
+                      style={{ width: `${practiceSpeed}%` }}
+                    />
+                  </div>
+                  <span>{practiceSpeed}%</span>
                 </div>
+                <button
+                  type="button"
+                  className="teleprompter-control-button"
+                  onClick={() => setPracticeSpeed((prev) => Math.min(100, prev + 10))}
+                >
+                  +
+                </button>
+              </div>
 
-                <div className="flex" style={{ gap: '12px' }}>
-                  {!isPracticing && !session.hasRecording ? (
+              <div className="practice-dock-group practice-dock-center">
+                {isPracticing ? (
+                  <button
+                    onClick={handleStopPractice}
+                    className="btn btn-danger practice-record-button"
+                  >
+                    ⏹ Stop
+                  </button>
+                ) : session.hasRecording ? (
+                  <>
                     <button
-                      onClick={handleStartPractice}
+                      onClick={handleStartPracticeRecording}
                       disabled={!script}
-                      className="btn btn-success"
-                      style={{ paddingLeft: '32px', paddingRight: '32px' }}
+                      className="btn btn-success practice-record-button"
                     >
-                      ▶ Start Recording
+                      ▶ Record
                     </button>
-                  ) : isPracticing ? (
-                    <>
-                      <button
-                        onClick={handleCancelPractice}
-                        className="btn btn-secondary"
-                        style={{ paddingLeft: '24px', paddingRight: '24px' }}
-                      >
-                        ✕ Discard
-                      </button>
-                      <button
-                        onClick={handleStopPractice}
-                        className="btn btn-danger"
-                        style={{ paddingLeft: '32px', paddingRight: '32px' }}
-                      >
-                        ⏹ Stop Recording
-                      </button>
-                    </>
-                  ) : session.hasRecording ? (
-                    <>
-                      <button
-                        onClick={handleSkipAnalysis}
-                        className="btn btn-secondary"
-                        style={{ paddingLeft: '24px', paddingRight: '24px' }}
-                      >
-                        ✕ Discard
-                      </button>
-                      <button
-                        onClick={handleStartPractice}
-                        className="btn btn-secondary"
-                        style={{ paddingLeft: '24px', paddingRight: '24px' }}
-                      >
-                        🔄 Record Again
-                      </button>
-                      <button
-                        onClick={handleStartAnalysis}
-                        className="btn btn-primary"
-                        style={{ paddingLeft: '32px', paddingRight: '32px' }}
-                      >
-                        📊 Start Analysis
-                      </button>
-                    </>
-                  ) : null}
-                </div>
+                    <button
+                      onClick={handleDiscardPractice}
+                      className="btn btn-secondary practice-record-button"
+                    >
+                      ✕ Discard
+                    </button>
+                    <button
+                      onClick={handleStartAnalysis}
+                      className="btn btn-primary practice-record-button"
+                    >
+                      📊 Analyze
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleStartPracticeRecording}
+                    disabled={!script}
+                    className="btn btn-success practice-record-button"
+                  >
+                    ▶ Record
+                  </button>
+                )}
+              </div>
 
-                <div className="flex items-center" style={{ gap: '16px', fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>
-                  {isPracticing && (
-                    <div className="flex items-center" style={{ gap: '8px' }}>
-                      <span>🎤</span>
-                      <div style={{ width: '80px', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            background: isSpeaking ? '#10b981' : '#6366f1',
-                            width: `${Math.min(audioLevel * 2, 100)}%`,
-                            transition: 'all 0.1s ease'
-                          }}
-                        />
-                      </div>
-                      <span style={{ fontSize: '12px', minWidth: '60px' }}>
-                        {isSpeaking ? 'Speaking' : 'Silent'}
-                      </span>
+              <div className="practice-dock-group practice-dock-right">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleResetPracticeScroll}
+                >
+                  ↺ Reset
+                </button>
+                {isPracticing && (
+                  <div className="practice-live-pill">
+                    <span className={isSpeaking ? 'text-emerald-400' : 'text-white/60'}>
+                      {isSpeaking ? 'Speaking' : 'Listening'}
+                    </span>
+                    <div className="practice-level-meter">
+                      <div
+                        className="practice-level-meter-fill"
+                        style={{ width: `${Math.min(audioLevel * 2, 100)}%` }}
+                      />
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -691,28 +588,29 @@ function App() {
         )}
       </main>
 
-      {/* Footer / Trust Section */}
-      <footer className="glass-strong border-t border-white/5" style={{ padding: '32px 24px', marginTop: 'auto' }}>
-        <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-3">
-            <div style={{ fontSize: '24px' }}>🎙️</div>
-            <div>
-              <div style={{ fontWeight: '800', color: 'white', fontSize: '14px', letterSpacing: '-0.02em' }}>AI TRACKER</div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontWeight: '600' }}>BUILT FOR MODERN CREATORS</div>
+      {activeTab !== 'practice' && (
+        <footer className="glass-strong border-t border-white/5" style={{ padding: '32px 24px', marginTop: 'auto' }}>
+          <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div style={{ fontSize: '24px' }}>🎙️</div>
+              <div>
+                <div style={{ fontWeight: '800', color: 'white', fontSize: '14px', letterSpacing: '-0.02em' }}>AI TRACKER</div>
+                <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontWeight: '600' }}>BUILT FOR MODERN CREATORS</div>
+              </div>
+            </div>
+
+            <div className="flex gap-8 text-[12px] font-medium text-white/40">
+              <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+              <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+              <a href="#" className="hover:text-white transition-colors">How it Works</a>
+            </div>
+
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>
+              © 2026 AI Tracker Engine. Empowering clearer voices worldwide.
             </div>
           </div>
-
-          <div className="flex gap-8 text-[12px] font-medium text-white/40">
-            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-white transition-colors">How it Works</a>
-          </div>
-
-          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>
-            © 2026 AI Tracker Engine. Empowering clearer voices worldwide.
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

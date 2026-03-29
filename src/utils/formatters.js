@@ -3,6 +3,13 @@
  * Text formatting, time display, and script parsing utilities
  */
 
+import {
+    estimateDeliveryReadingTime,
+    generateDeliveryRoadmapPrompt,
+    parseDeliveryScript,
+    stripDeliveryNotation
+} from './scriptNotation.js';
+
 /**
  * Format duration in milliseconds to readable string
  * @param {number} ms - Duration in milliseconds
@@ -51,37 +58,28 @@ export function formatWPM(wpm) {
  * @returns {Array<{type: 'text' | 'pause', content: string}>}
  */
 export function parseScriptWithMarkers(script) {
-    if (!script) return [];
-
+    const parsed = parseDeliveryScript(script);
     const parts = [];
-    const pauseRegex = /\[(?:PAUSE|pause|Pause)(?:\s*-?\s*(\d+)s?)?\]/gi;
 
-    let lastIndex = 0;
-    let match;
-
-    while ((match = pauseRegex.exec(script)) !== null) {
-        // Add text before the pause
-        if (match.index > lastIndex) {
-            const textContent = script.slice(lastIndex, match.index).trim();
-            if (textContent) {
-                parts.push({ type: 'text', content: textContent });
-            }
+    parsed.sections.forEach((section) => {
+        if (section.title && section.title !== 'Draft') {
+            parts.push({ type: 'section', content: section.title });
         }
 
-        // Add the pause marker
-        const pauseDuration = match[1] || '2';
-        parts.push({ type: 'pause', content: `⏸ Pause ${pauseDuration}s` });
-
-        lastIndex = match.index + match[0].length;
-    }
-
-    // Add remaining text
-    if (lastIndex < script.length) {
-        const remainingText = script.slice(lastIndex).trim();
-        if (remainingText) {
-            parts.push({ type: 'text', content: remainingText });
-        }
-    }
+        section.paragraphs.forEach((paragraph) => {
+            paragraph.tokens.forEach((token) => {
+                if (token.type === 'pause') {
+                    parts.push({ type: 'pause', content: `⏸ ${token.value}` });
+                } else if (token.type === 'emphasis') {
+                    parts.push({ type: 'text', content: `[[${token.value}]]` });
+                } else if (token.type === 'enunciation') {
+                    parts.push({ type: 'text', content: `((${token.value}))` });
+                } else if (token.value?.trim()) {
+                    parts.push({ type: 'text', content: token.value });
+                }
+            });
+        });
+    });
 
     return parts;
 }
@@ -110,15 +108,7 @@ export function formatForTeleprompter(script) {
  * @returns {number} Estimated reading time in seconds
  */
 export function estimateReadingTime(script, wpm = 130) {
-    if (!script) return 0;
-
-    const words = script.trim().split(/\s+/).filter(w => w.length > 0);
-    const pauseCount = (script.match(/\[pause\]/gi) || []).length;
-
-    const readingMinutes = words.length / wpm;
-    const pauseSeconds = pauseCount * 2; // 2 seconds per pause
-
-    return Math.round(readingMinutes * 60 + pauseSeconds);
+    return estimateDeliveryReadingTime(script, wpm);
 }
 
 /**
@@ -180,23 +170,16 @@ export function truncateText(text, maxLength = 100) {
  * @returns {string} Formatted prompt
  */
 export function generateScriptPrompt(topic, tone, targetDuration) {
-    const wordCount = Math.round((targetDuration / 60) * 100); // 100 WPM for slower, comfortable pace
-
-    return `Write a teleprompter script about "${topic}" with a ${tone} tone.
-
-IMPORTANT: This script is for someone practicing to improve their speaking fluency.
-
-Requirements:
-- Approximately ${wordCount} words (for a ${Math.round(targetDuration / 60)} minute video at a relaxed pace)
-- Include [PAUSE] markers frequently (every 1-2 sentences) for breathing and composure
-- Use VERY SHORT sentences (max 10-12 words each)
-- Avoid tongue-twisters, alliteration, and complex consonant clusters
-- Use simple, common vocabulary
-- Write in a calm, supportive tone
-- Include encouraging phrases like "Take your time" or "Breathe" in [PAUSE] markers
-- Start with an easy opening sentence
-- Build confidence gradually through the script
-
-Format the output as plain text with paragraphs separated by blank lines.
-Mark breathing pauses as [PAUSE] or [PAUSE - breathe].`;
+    return generateDeliveryRoadmapPrompt({
+        topic,
+        tone,
+        targetDuration,
+        mode: 'generate'
+    });
 }
+
+export {
+    parseDeliveryScript,
+    stripDeliveryNotation,
+    generateDeliveryRoadmapPrompt
+};

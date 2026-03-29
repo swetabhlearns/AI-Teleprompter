@@ -9,6 +9,11 @@ export function CameraView({ onStreamReady, isRecording = false, showDebug = fal
     const [hasCamera, setHasCamera] = useState(true);
     const [error, setError] = useState(null);
     const streamRef = useRef(null);
+    const onStreamReadyRef = useRef(onStreamReady);
+
+    useEffect(() => {
+        onStreamReadyRef.current = onStreamReady;
+    }, [onStreamReady]);
 
     // Initialize camera
     useEffect(() => {
@@ -30,8 +35,8 @@ export function CameraView({ onStreamReady, isRecording = false, showDebug = fal
                     streamRef.current = stream;
                     setHasCamera(true);
 
-                    if (onStreamReady) {
-                        onStreamReady(stream);
+                    if (onStreamReadyRef.current) {
+                        onStreamReadyRef.current(stream);
                     }
                 }
             } catch (err) {
@@ -51,7 +56,7 @@ export function CameraView({ onStreamReady, isRecording = false, showDebug = fal
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
         };
-    }, [onStreamReady]);
+    }, []);
 
     /**
      * Get the current video element for processing

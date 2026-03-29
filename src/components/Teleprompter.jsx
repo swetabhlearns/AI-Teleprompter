@@ -1,416 +1,406 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { parseScriptWithMarkers } from '../utils/formatters';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { parseDeliveryScript } from '../utils/formatters';
 
-/**
- * Teleprompter Component
- * Smooth scrolling text overlay with speed control
- */
-export function Teleprompter({
-    script = '',
-    isActive = false,
-    isSpeaking = false,
-    audioLevel = 0,
-    onSpeedChange,
-    initialSpeed = 20
-}) {
-    const [baseSpeed, setBaseSpeed] = useState(initialSpeed);
-    const [isPaused, setIsPaused] = useState(false);
-    const [countdown, setCountdown] = useState(0);
-    const [isScrolling, setIsScrolling] = useState(false);
-    const contentRef = useRef(null);
-    const scrollPosRef = useRef(0);
-    const animationRef = useRef(null);
-    const speedRef = useRef(initialSpeed);
+const DEFAULT_NOTATION_PREFERENCES = {
+  showSections: true,
+  showPauses: true,
+  showSlow: true,
+  showFast: true,
+  showTempo: true,
+  showEmphasis: true,
+  showEnunciation: true,
+  distractionFree: false
+};
 
-    // Parse script into segments
-    const scriptSegments = useMemo(() => {
-        return parseScriptWithMarkers(script);
-    }, [script]);
+function isTempoVisible(tempo, preferences) {
+  const legacyTempo = preferences.showTempo;
+  const tempoToggle = typeof legacyTempo === 'boolean' ? legacyTempo : true;
 
-    // Speed control handlers
-    const handleSpeedUp = useCallback(() => {
-        setBaseSpeed(prev => Math.min(100, prev + 10));
-    }, []);
+  if (tempo === 'slow') {
+    return tempoToggle && preferences.showSlow !== false;
+  }
 
-    const handleSpeedDown = useCallback(() => {
-        setBaseSpeed(prev => Math.max(10, prev - 10));
-    }, []);
+  if (tempo === 'fast') {
+    return tempoToggle && preferences.showFast !== false;
+  }
 
-    const handleTogglePause = useCallback(() => {
-        setIsPaused(prev => !prev);
-    }, []);
+  return false;
+}
 
-    const handleReset = useCallback(() => {
-        scrollPosRef.current = 0;
-        if (contentRef.current) {
-            contentRef.current.scrollTop = 0;
-        }
-    }, []);
-
-    // Update speed ref when baseSpeed changes
-    useEffect(() => {
-        speedRef.current = baseSpeed;
-        if (onSpeedChange) {
-            onSpeedChange(baseSpeed);
-        }
-    }, [baseSpeed, onSpeedChange]);
-
-    // Keyboard shortcuts
-    useEffect(() => {
-        if (!isActive) return;
-
-        const handleKeyDown = (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-            switch (e.key) {
-                case 'ArrowUp':
-                    e.preventDefault();
-                    handleSpeedUp();
-                    break;
-                case 'ArrowDown':
-                    e.preventDefault();
-                    handleSpeedDown();
-                    break;
-                case ' ':
-                    e.preventDefault();
-                    handleTogglePause();
-                    break;
-                case 'r':
-                case 'R':
-                    e.preventDefault();
-                    handleReset();
-                    break;
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isActive, handleSpeedUp, handleSpeedDown, handleTogglePause, handleReset]);
-
-    // Countdown effect when becoming active
-    useEffect(() => {
-        if (isActive && !isScrolling && countdown === 0) {
-            // Start countdown
-            setCountdown(5);
-        }
-
-        if (!isActive) {
-            // Reset when inactive
-            setCountdown(0);
-            setIsScrolling(false);
-        }
-    }, [isActive]);
-
-    // Countdown timer
-    useEffect(() => {
-        if (countdown > 0) {
-            const timer = setTimeout(() => {
-                if (countdown === 1) {
-                    setCountdown(0);
-                    setIsScrolling(true);
-                } else {
-                    setCountdown(countdown - 1);
-                }
-            }, 1000);
-            return () => clearTimeout(timer);
-        }
-    }, [countdown]);
-
-    // Main scroll animation loop
-    useEffect(() => {
-        if (!isActive || !isScrolling) {
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-                animationRef.current = null;
-            }
-            return;
-        }
-
-        let lastTime = performance.now();
-
-        const animate = (currentTime) => {
-            const deltaTime = currentTime - lastTime;
-            lastTime = currentTime;
-
-            if (!isPaused && contentRef.current) {
-                // Calculate speed: baseSpeed 0-100 maps to 0-200 pixels/second
-                const pixelsPerSecond = (speedRef.current / 100) * 200;
-                const scrollDelta = (pixelsPerSecond * deltaTime) / 1000;
-
-                scrollPosRef.current += scrollDelta;
-
-                const maxScroll = contentRef.current.scrollHeight - contentRef.current.clientHeight;
-
-                // Auto-pause when reaching the end of the script
-                if (scrollPosRef.current >= maxScroll && maxScroll > 0) {
-                    scrollPosRef.current = maxScroll;
-                    contentRef.current.scrollTop = maxScroll;
-                    setIsPaused(true); // Auto-pause at end
-                    console.log('Teleprompter reached end - auto-paused');
-                    return; // Stop the animation loop
-                }
-
-                scrollPosRef.current = Math.min(scrollPosRef.current, Math.max(0, maxScroll));
-                contentRef.current.scrollTop = scrollPosRef.current;
-            }
-
-            animationRef.current = requestAnimationFrame(animate);
-        };
-
-        animationRef.current = requestAnimationFrame(animate);
-
-        return () => {
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-                animationRef.current = null;
-            }
-        };
-    }, [isActive, isScrolling, isPaused]);
-
-    // Reset on new script
-    useEffect(() => {
-        scrollPosRef.current = 0;
-        setIsPaused(false);
-        setIsScrolling(false);
-        setCountdown(0);
-        if (contentRef.current) {
-            contentRef.current.scrollTop = 0;
-        }
-    }, [script]);
-
-    if (!script) {
-        return (
-            <div className="teleprompter-overlay">
-                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)' }}>
-                    <p style={{ fontSize: '18px' }}>No script loaded</p>
-                    <p style={{ fontSize: '14px', marginTop: '8px' }}>Go to Script tab to create or generate one</p>
-                </div>
-            </div>
-        );
+function Token({ token, notationPreferences }) {
+  if (token.type === 'pause') {
+    if (!notationPreferences.showPauses) {
+      return null;
     }
 
+    return <span className="teleprompter-pause">{token.value}</span>;
+  }
+
+  if (token.type === 'emphasis') {
     return (
-        <div className="teleprompter-overlay">
-            {/* Countdown overlay */}
-            {countdown > 0 && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(0, 0, 0, 0.85)',
-                        zIndex: 100,
-                        flexDirection: 'column',
-                        gap: '20px'
-                    }}
-                >
-                    <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '18px', fontWeight: '500' }}>
-                        Get Ready...
-                    </div>
-                    <div
-                        style={{
-                            fontSize: '120px',
-                            fontWeight: '800',
-                            background: 'linear-gradient(135deg, #6366f1, #22d3ee)',
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent',
-                            animation: 'pulse 1s ease-in-out infinite',
-                            textShadow: '0 0 60px rgba(99,102,241,0.5)'
-                        }}
-                    >
-                        {countdown}
-                    </div>
-                    <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}>
-                        Starting in {countdown} second{countdown !== 1 ? 's' : ''}...
-                    </div>
-                </div>
-            )}
-
-            {/* Scrollable content */}
-            <div
-                ref={contentRef}
-                className="teleprompter-text"
-                style={{
-                    height: '100%',
-                    overflow: 'hidden',
-                    paddingTop: '50vh',
-                    paddingBottom: '50vh'
-                }}
-            >
-                {scriptSegments.map((segment, index) => (
-                    segment.type === 'pause' ? (
-                        <div key={index} className="pause-marker">
-                            {segment.content}
-                        </div>
-                    ) : (
-                        <p key={index} style={{ marginBottom: '28px', lineHeight: '1.6' }}>
-                            {segment.content}
-                        </p>
-                    )
-                ))}
-            </div>
-
-            {/* Speed control bar */}
-            {isActive && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: '24px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '16px',
-                        padding: '14px 28px',
-                        background: 'rgba(0, 0, 0, 0.9)',
-                        backdropFilter: 'blur(12px)',
-                        borderRadius: '50px',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
-                    }}
-                >
-                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', fontWeight: '600', letterSpacing: '0.5px' }}>
-                        SPEED
-                    </span>
-
-                    <button
-                        onClick={handleSpeedDown}
-                        style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '50%',
-                            border: '2px solid rgba(255,255,255,0.2)',
-                            background: 'transparent',
-                            color: 'white',
-                            fontSize: '24px',
-                            fontWeight: 'bold',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        −
-                    </button>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div
-                            style={{
-                                width: '140px',
-                                height: '10px',
-                                background: 'rgba(255,255,255,0.15)',
-                                borderRadius: '5px',
-                                overflow: 'hidden'
-                            }}
-                        >
-                            <div
-                                style={{
-                                    height: '100%',
-                                    width: `${baseSpeed}%`,
-                                    background: isPaused
-                                        ? 'rgba(255,255,255,0.3)'
-                                        : 'linear-gradient(90deg, #6366f1, #22d3ee)',
-                                    borderRadius: '5px',
-                                    transition: 'width 0.15s ease'
-                                }}
-                            />
-                        </div>
-                        <span style={{
-                            color: 'white',
-                            fontSize: '16px',
-                            fontWeight: '700',
-                            minWidth: '50px',
-                            textAlign: 'center'
-                        }}>
-                            {baseSpeed}%
-                        </span>
-                    </div>
-
-                    <button
-                        onClick={handleSpeedUp}
-                        style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '50%',
-                            border: '2px solid rgba(255,255,255,0.2)',
-                            background: 'transparent',
-                            color: 'white',
-                            fontSize: '24px',
-                            fontWeight: 'bold',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        +
-                    </button>
-
-                    <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
-
-                    <button
-                        onClick={handleTogglePause}
-                        style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '50%',
-                            border: 'none',
-                            background: isPaused
-                                ? 'linear-gradient(135deg, #10b981, #059669)'
-                                : 'linear-gradient(135deg, #f59e0b, #d97706)',
-                            color: 'white',
-                            fontSize: '20px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-                        }}
-                    >
-                        {isPaused ? '▶' : '⏸'}
-                    </button>
-
-                    <button
-                        onClick={handleReset}
-                        style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '50%',
-                            border: '2px solid rgba(255,255,255,0.2)',
-                            background: 'transparent',
-                            color: 'white',
-                            fontSize: '18px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        ↺
-                    </button>
-                </div>
-            )}
-
-            {/* Keyboard hints */}
-            {isActive && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: '100px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        fontSize: '12px',
-                        color: 'rgba(255,255,255,0.25)',
-                        textAlign: 'center'
-                    }}
-                >
-                    ↑↓ Speed • Space Pause • R Reset
-                </div>
-            )}
-        </div>
+      <span className={notationPreferences.showEmphasis ? 'teleprompter-emphasis' : ''}>
+        {token.value}
+      </span>
     );
+  }
+
+  if (token.type === 'enunciation') {
+    return (
+      <span className={notationPreferences.showEnunciation ? 'teleprompter-enunciation' : ''}>
+        {token.value}
+      </span>
+    );
+  }
+
+  return <span>{token.value}</span>;
+}
+
+function SectionBlock({ section, notationPreferences }) {
+  return (
+    <section className="teleprompter-section">
+      {notationPreferences.showSections && section.title !== 'Draft' && (
+        <div className="teleprompter-section-label">
+          <span>{String(section.index).padStart(2, '0')}</span>
+          <h3>{section.title}</h3>
+        </div>
+      )}
+
+      {section.paragraphs.map((paragraph) => (
+        <p
+          key={paragraph.id}
+          className={[
+            'teleprompter-paragraph',
+            isTempoVisible(paragraph.tempo, notationPreferences) ? `tempo-${paragraph.tempo}` : ''
+          ].filter(Boolean).join(' ')}
+        >
+          {isTempoVisible(paragraph.tempo, notationPreferences) && (
+            <span className={`teleprompter-tempo-badge tempo-${paragraph.tempo}`}>
+              {paragraph.tempo === 'slow' ? 'Slow' : 'Fast'}
+            </span>
+          )}
+
+          {paragraph.tokens.map((token, index) => (
+            <Token
+              key={`${paragraph.id}-${index}`}
+              token={token}
+              notationPreferences={notationPreferences}
+            />
+          ))}
+        </p>
+      ))}
+    </section>
+  );
+}
+
+export function Teleprompter({
+  script = '',
+  isActive = false,
+  isSpeaking = false,
+  audioLevel = 0,
+  onSpeedChange,
+  initialSpeed = 20,
+  speed,
+  notationPreferences = DEFAULT_NOTATION_PREFERENCES,
+  variant = 'overlay',
+  showControls = true,
+  showHints = true,
+  showLiveIndicator = true
+}) {
+  const [uncontrolledSpeed, setUncontrolledSpeed] = useState(initialSpeed);
+  const [isPaused, setIsPaused] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const contentRef = useRef(null);
+  const scrollPosRef = useRef(0);
+  const animationRef = useRef(null);
+  const speedRef = useRef(initialSpeed);
+
+  const resolvedPreferences = notationPreferences || DEFAULT_NOTATION_PREFERENCES;
+  const parsedScript = useMemo(() => parseDeliveryScript(script), [script]);
+  const resolvedSpeed = typeof speed === 'number' ? speed : uncontrolledSpeed;
+
+  const handleSpeedUp = useCallback(() => {
+    const next = Math.min(100, resolvedSpeed + 10);
+    if (typeof speed === 'number') {
+      onSpeedChange?.(next);
+    } else {
+      setUncontrolledSpeed(next);
+    }
+  }, [onSpeedChange, resolvedSpeed, speed]);
+
+  const handleSpeedDown = useCallback(() => {
+    const next = Math.max(10, resolvedSpeed - 10);
+    if (typeof speed === 'number') {
+      onSpeedChange?.(next);
+    } else {
+      setUncontrolledSpeed(next);
+    }
+  }, [onSpeedChange, resolvedSpeed, speed]);
+
+  const handleTogglePause = useCallback(() => {
+    setIsPaused((prev) => !prev);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    scrollPosRef.current = 0;
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
+    }
+  }, []);
+
+  useEffect(() => {
+    speedRef.current = resolvedSpeed;
+    if (onSpeedChange) {
+      onSpeedChange(resolvedSpeed);
+    }
+  }, [onSpeedChange, resolvedSpeed]);
+
+  useEffect(() => {
+    if (!isActive) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+      switch (event.key) {
+        case 'ArrowUp':
+          event.preventDefault();
+          handleSpeedUp();
+          break;
+        case 'ArrowDown':
+          event.preventDefault();
+          handleSpeedDown();
+          break;
+        case ' ':
+          event.preventDefault();
+          handleTogglePause();
+          break;
+        case 'r':
+        case 'R':
+          event.preventDefault();
+          handleReset();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleReset, handleSpeedDown, handleSpeedUp, handleTogglePause, isActive]);
+
+  useEffect(() => {
+    if (!isActive) {
+      const resetTimer = window.setTimeout(() => {
+        setCountdown(0);
+        setIsScrolling(false);
+        setIsPaused(false);
+      }, 0);
+
+      return () => window.clearTimeout(resetTimer);
+    }
+
+    if (isScrolling || countdown !== 0) {
+      return undefined;
+    }
+
+    const startTimer = window.setTimeout(() => {
+      setCountdown(5);
+    }, 0);
+
+    return () => window.clearTimeout(startTimer);
+  }, [countdown, isActive, isScrolling]);
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = window.setTimeout(() => {
+        if (countdown === 1) {
+          setCountdown(0);
+          setIsScrolling(true);
+        } else {
+          setCountdown(countdown - 1);
+        }
+      }, 1000);
+
+      return () => window.clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [countdown]);
+
+  useEffect(() => {
+    if (!isActive || !isScrolling) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      return undefined;
+    }
+
+    let lastTime = performance.now();
+
+    const animate = (currentTime) => {
+      const deltaTime = currentTime - lastTime;
+      lastTime = currentTime;
+
+      if (!isPaused && contentRef.current) {
+        const pixelsPerSecond = (speedRef.current / 100) * 200;
+        const scrollDelta = (pixelsPerSecond * deltaTime) / 1000;
+
+        scrollPosRef.current += scrollDelta;
+        const maxScroll = contentRef.current.scrollHeight - contentRef.current.clientHeight;
+
+        if (scrollPosRef.current >= maxScroll && maxScroll > 0) {
+          scrollPosRef.current = maxScroll;
+          contentRef.current.scrollTop = maxScroll;
+          setIsPaused(true);
+          return;
+        }
+
+        scrollPosRef.current = Math.min(scrollPosRef.current, Math.max(0, maxScroll));
+        contentRef.current.scrollTop = scrollPosRef.current;
+      }
+
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, [isActive, isPaused, isScrolling]);
+
+  useEffect(() => {
+    scrollPosRef.current = 0;
+    const resetTimer = window.setTimeout(() => {
+      setIsPaused(false);
+      setIsScrolling(false);
+      setCountdown(0);
+
+      if (contentRef.current) {
+        contentRef.current.scrollTop = 0;
+      }
+    }, 0);
+
+    return () => window.clearTimeout(resetTimer);
+  }, [script]);
+
+  if (!script) {
+    return (
+      <div className={variant === 'panel' ? 'teleprompter-panel' : 'teleprompter-overlay'}>
+        <div className="teleprompter-empty">
+          <p>No script loaded</p>
+          <span>Open the script workspace to draft your delivery roadmap.</span>
+        </div>
+      </div>
+    );
+  }
+
+  const rootClassName = variant === 'panel'
+    ? 'teleprompter-panel glass-strong'
+    : 'teleprompter-overlay';
+
+  const textClassName = variant === 'panel'
+    ? 'teleprompter-text teleprompter-panel-text'
+    : 'teleprompter-text';
+
+  const controlsClassName = variant === 'panel'
+    ? 'teleprompter-controls teleprompter-controls-panel'
+    : 'teleprompter-controls';
+
+  const liveIndicatorClassName = variant === 'panel'
+    ? 'teleprompter-live-indicator teleprompter-live-indicator-panel'
+    : 'teleprompter-live-indicator';
+
+  return (
+    <div className={rootClassName}>
+      {countdown > 0 && (
+        <div className="teleprompter-countdown">
+          <div className="teleprompter-countdown-label">Get ready</div>
+          <div className="teleprompter-countdown-number">{countdown}</div>
+          <div className="teleprompter-countdown-subtitle">Starting in {countdown} second{countdown !== 1 ? 's' : ''}</div>
+        </div>
+      )}
+
+      <div
+        ref={contentRef}
+        className={textClassName}
+        style={{
+          height: variant === 'panel' ? 'auto' : '100%',
+          minHeight: variant === 'panel' ? 0 : undefined,
+          flex: variant === 'panel' ? '1 1 0' : undefined,
+          overflow: 'hidden',
+          overflowY: variant === 'panel' ? 'auto' : 'hidden',
+          paddingTop: variant === 'panel' ? '0' : '44vh',
+          paddingBottom: variant === 'panel' ? '0' : '42vh'
+        }}
+      >
+        {parsedScript.sections.length === 0 ? (
+          <p className="teleprompter-paragraph">Add a section header to shape the flow.</p>
+        ) : (
+          parsedScript.sections.map((section, index) => (
+            <SectionBlock
+              key={section.id}
+              section={{ ...section, index: index + 1 }}
+              notationPreferences={resolvedPreferences}
+            />
+          ))
+        )}
+      </div>
+
+      {!resolvedPreferences.distractionFree && showControls && (
+        <>
+          {isActive && (
+            <div className={controlsClassName}>
+              <span className="teleprompter-speed-label">Speed</span>
+              <button onClick={handleSpeedDown} className="teleprompter-control-button" type="button">
+                −
+              </button>
+              <div className="teleprompter-speed-meter">
+                <div className="teleprompter-speed-track">
+                  <div
+                    className="teleprompter-speed-fill"
+                    style={{ width: `${resolvedSpeed}%` }}
+                  />
+                </div>
+                <span>{resolvedSpeed}%</span>
+              </div>
+              <button onClick={handleSpeedUp} className="teleprompter-control-button" type="button">
+                +
+              </button>
+              <button
+                onClick={handleTogglePause}
+                className={`teleprompter-pause-button ${isPaused ? 'paused' : 'running'}`}
+                type="button"
+              >
+                {isPaused ? '▶' : '⏸'}
+              </button>
+              <button onClick={handleReset} className="teleprompter-control-button" type="button">
+                ↺
+              </button>
+            </div>
+          )}
+
+          {isActive && showHints && (
+            <div className="teleprompter-hints">
+              ↑↓ Speed • Space Pause • R Reset
+            </div>
+          )}
+        </>
+      )}
+
+      {isActive && showLiveIndicator && (
+        <div className={liveIndicatorClassName}>
+          <span className={isSpeaking ? 'speaking' : 'silent'}>
+            {isSpeaking ? 'Speaking' : `Tracking ${Math.min(audioLevel * 2, 100)}%`}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default Teleprompter;

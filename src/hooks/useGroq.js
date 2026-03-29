@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import Groq from 'groq-sdk';
 import { encode, decode } from '@toon-format/toon';
-import { generateScriptPrompt } from '../utils/formatters';
+import { generateDeliveryRoadmapPrompt } from '../utils/formatters';
 import { searchWeb, formatSearchContext } from '../utils/webSearch';
 
 // Initialize Groq client
@@ -47,19 +47,18 @@ export function useGroq() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    /**
-     * Generate a script using Groq LLM (TOON-optimized prompt)
-     * @param {string} topic - Script topic
-     * @param {string} tone - Tone/style
-     * @param {number} targetDuration - Duration in seconds
-     * @param {string} difficulty - easy/medium/hard/expert
-     * @param {boolean} useCurrentData - Whether to fetch current web data
-     */
-    const generateScript = useCallback(async (topic, tone = 'professional', targetDuration = 120, difficulty = 'easy', useCurrentData = false) => {
+    const requestRoadmapScript = useCallback(async ({
+        topic,
+        tone = 'professional',
+        targetDuration = 120,
+        difficulty = 'easy',
+        useCurrentData = false,
+        currentScript = '',
+        mode = 'generate'
+    }) => {
         setIsLoading(true);
         setError(null);
 
-        // Difficulty settings
         const difficultySettings = {
             easy: {
                 maxWords: 8,
@@ -94,16 +93,11 @@ export function useGroq() {
         const settings = difficultySettings[difficulty] || difficultySettings.easy;
 
         try {
-            // Optionally fetch current web data
             let webContext = '';
             if (useCurrentData) {
-                console.log('🌐 Fetching current web data for:', topic);
                 const searchResult = await searchWeb(topic);
                 if (searchResult.success && searchResult.results.length > 0) {
                     webContext = formatSearchContext(searchResult.results);
-                    console.log('✅ Web context retrieved:', searchResult.results.length, 'sources');
-                } else {
-                    console.warn('⚠️ Could not fetch web data:', searchResult.error);
                 }
             }
 
@@ -112,43 +106,35 @@ export function useGroq() {
                 tone,
                 difficulty,
                 durationSec: targetDuration,
-                targetWpm: settings.wpm
+                targetWpm: settings.wpm,
+                currentScriptPreview: currentScript ? currentScript.slice(0, 500) : ''
             };
 
             const toonRequest = encode(requestData);
-            console.log('TOON request:', toonRequest);
-
-            let prompt = `Create a teleprompter script with these settings:
-${toonRequest}
-
-Difficulty: ${difficulty.toUpperCase()}
-- Max ${settings.maxWords} words per sentence
-- ${settings.vocab}
-- ${settings.sentences}
-- [PAUSE] markers: ${settings.pauseFreq}
-- Target ${settings.wpm} words per minute`;
-
-            // Add web context if available
-            if (webContext) {
-                prompt += `\n\n${webContext}\n\nIMPORTANT: Use the current web information above to include accurate, up-to-date facts in your script.`;
-            }
-
-            prompt += '\n\nOutput plain text script only. No markdown.';
+            const prompt = generateDeliveryRoadmapPrompt({
+                topic,
+                tone,
+                targetDuration,
+                difficulty,
+                currentScript,
+                mode,
+                useCurrentData
+            }) + `\n\nTOON context:\n${toonRequest}\n\nDelivery detail:\n- Max ${settings.maxWords} words per sentence\n- ${settings.vocab}\n- ${settings.sentences}\n- [PAUSE] markers: ${settings.pauseFreq}\n- Target ${settings.wpm} words per minute`;
 
             const completion = await groq.chat.completions.create({
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a scriptwriter creating ${difficulty}-level content for speech practice. ${useCurrentData ? 'Use the provided current web information to include accurate, recent facts.' : ''} Adjust complexity based on difficulty level.`
+                        content: `You are a speech coach and script editor. Write clean, speakable scripts with visible delivery notation. ${mode === 'refine' ? 'Preserve the original meaning while improving pacing and structure.' : ''} ${useCurrentData ? 'Use current context when helpful, but keep the script focused and editorial.' : ''}`
                     },
                     {
                         role: 'user',
-                        content: prompt
+                        content: `${prompt}${webContext ? `\n\nCurrent context:\n${webContext}` : ''}`
                     }
                 ],
                 model: 'llama-3.3-70b-versatile',
                 temperature: 0.7,
-                max_tokens: 2000,
+                max_tokens: 2200
             });
 
             return completion.choices[0]?.message?.content || '';
@@ -160,6 +146,45 @@ Difficulty: ${difficulty.toUpperCase()}
             setIsLoading(false);
         }
     }, []);
+
+    /**
+     * Generate a script using Groq LLM (TOON-optimized prompt)
+     * @param {string} topic - Script topic
+     * @param {string} tone - Tone/style
+     * @param {number} targetDuration - Duration in seconds
+     * @param {string} difficulty - easy/medium/hard/expert
+     * @param {boolean} useCurrentData - Whether to fetch current web data
+     */
+    const generateScript = useCallback(async (topic, tone = 'professional', targetDuration = 120, difficulty = 'easy', useCurrentData = false) => {
+        return requestRoadmapScript({
+            topic,
+            tone,
+            targetDuration,
+            difficulty,
+            useCurrentData,
+            mode: 'generate'
+        });
+    }, [requestRoadmapScript]);
+
+    const refineScript = useCallback(async (script, options = {}) => {
+        const {
+            topic = '',
+            tone = 'professional',
+            targetDuration = 120,
+            difficulty = 'medium',
+            useCurrentData = false
+        } = options;
+
+        return requestRoadmapScript({
+            topic: topic || 'this script',
+            tone,
+            targetDuration,
+            difficulty,
+            useCurrentData,
+            currentScript: script,
+            mode: script?.trim() ? 'refine' : 'generate'
+        });
+    }, [requestRoadmapScript]);
 
     /**
      * Transcribe audio using Groq Whisper with word-level timestamps
@@ -316,7 +341,9 @@ strengths[2]: strength1,strength2`;
                 if (jsonMatch) {
                     try {
                         return JSON.parse(jsonMatch[0]);
-                    } catch { }
+                    } catch (jsonErr) {
+                        console.warn('JSON fallback failed:', jsonErr.message);
+                    }
                 }
 
                 // Default response
@@ -577,6 +604,7 @@ Respond in JSON format:
 
     return {
         generateScript,
+        refineScript,
         transcribeAudio,
         analyzePerformance,
         generateInterviewQuestions,
@@ -586,4 +614,3 @@ Respond in JSON format:
         error
     };
 }
-

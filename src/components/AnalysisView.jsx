@@ -1,19 +1,10 @@
-import { useMemo } from 'react';
-import { formatDuration, formatWPM, formatScore } from '../utils/formatters';
+import { formatDuration } from '../utils/formatters';
 
 /**
  * AnalysisView Component
  * Post-recording performance analysis display
  */
 export function AnalysisView({ analysis, isLoading = false }) {
-    const wpmData = useMemo(() => {
-        return analysis?.summary?.wpm ? formatWPM(analysis.summary.wpm) : null;
-    }, [analysis]);
-
-    const overallScoreData = useMemo(() => {
-        return analysis?.summary?.overallScore ? formatScore(analysis.summary.overallScore) : null;
-    }, [analysis]);
-
     // Safe Data Extraction & Mapping (The "Anti-Crash" Layer)
     const summary = analysis?.summary || {};
     const habits = analysis?.habits || {};
@@ -22,7 +13,6 @@ export function AnalysisView({ analysis, isLoading = false }) {
     const vocal = habits.vocal || {};
     const cognitive = habits.cognitive || {};
 
-    const presence = analysis?.presence || { eyeContactPercentage: 0, postureScore: 0 };
     const speech = analysis?.speech || { clarityScore: 0, fillerWords: { count: 0, occurrences: [] } };
     const recommendations = analysis?.recommendations || [];
 
@@ -362,27 +352,27 @@ export function AnalysisView({ analysis, isLoading = false }) {
                     </div>
                 )}
 
-                {/* Presence Metrics */}
+                {/* Speech Profile */}
                 <div className="glass-strong p-6">
                     <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        <span>👤</span> Presence
+                        <span>🎙️</span> Speech Profile
                     </h3>
 
                     <div className="space-y-4">
-                        {/* Eye Contact */}
+                        {/* Pausing */}
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-white/70">Eye Contact</span>
+                                <span className="text-white/70">Pausing</span>
                                 <span className="text-white font-medium">
-                                    {presence.eyeContactPercentage}%
+                                    {pauses.pauseScore}%
                                 </span>
                             </div>
                             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                                 <div
                                     className="h-full rounded-full transition-all duration-500"
                                     style={{
-                                        width: `${presence.eyeContactPercentage}%`,
-                                        background: presence.eyeContactPercentage >= 70
+                                        width: `${pauses.pauseScore}%`,
+                                        background: pauses.pauseScore >= 70
                                             ? 'linear-gradient(90deg, #10b981, #22d3ee)'
                                             : 'linear-gradient(90deg, #f59e0b, #ef4444)'
                                     }}
@@ -390,22 +380,41 @@ export function AnalysisView({ analysis, isLoading = false }) {
                             </div>
                         </div>
 
-                        {/* Posture */}
+                        {/* Pace */}
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-white/70">Posture</span>
+                                <span className="text-white/70">Pace Variety</span>
                                 <span className="text-white font-medium">
-                                    {presence.postureScore}%
+                                    {rate.variabilityScore}%
                                 </span>
                             </div>
                             <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                                 <div
                                     className="h-full rounded-full transition-all duration-500"
                                     style={{
-                                        width: `${presence.postureScore}%`,
-                                        background: presence.postureScore >= 70
+                                        width: `${rate.variabilityScore}%`,
+                                        background: rate.variabilityScore >= 70
                                             ? 'linear-gradient(90deg, #10b981, #22d3ee)'
                                             : 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Volume */}
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-white/70">Volume & Energy</span>
+                                <span className="text-white font-medium">
+                                    {volume.volumeScore}%
+                                </span>
+                            </div>
+                            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                        width: `${volume.volumeScore}%`,
+                                        background: 'linear-gradient(90deg, #6366f1, #22d3ee)'
                                     }}
                                 />
                             </div>

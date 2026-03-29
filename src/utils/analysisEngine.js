@@ -609,8 +609,6 @@ export function generatePerformanceReport(data) {
     const {
         transcript,
         durationMs,
-        eyeContactPercentage = 0,
-        postureScore = 0,
         words = [],
         stutteringReport = null,
         volumeHistory = [] // New volume history
@@ -652,12 +650,10 @@ export function generatePerformanceReport(data) {
 
     // Overall score weighted average (now includes habits)
     const overallScore = Math.round(
-        (clarityScore * 0.15) +
-        (fluencyScore * 0.10) +
-        (habitsScore * 0.35) + // Habits now weightier
-        (Math.min(100, wpm / 1.5) * 0.10) +
-        (eyeContactPercentage * 0.15) +
-        (postureScore * 0.15)
+        (clarityScore * 0.25) +
+        (fluencyScore * 0.20) +
+        (habitsScore * 0.35) +
+        (Math.min(100, (wpm / 160) * 100) * 0.20)
     );
 
     // Combine recommendations from all sources
@@ -674,9 +670,7 @@ export function generatePerformanceReport(data) {
 
     const baseRecommendations = generateRecommendations({
         wpm,
-        fillerCount: fillerAnalysis.count,
-        eyeContactPercentage,
-        postureScore
+        fillerCount: fillerAnalysis.count
     });
 
     const stutteringRecommendations = stutteringReport?.recommendations || [];
@@ -713,11 +707,6 @@ export function generatePerformanceReport(data) {
                 frameworks: frameworkDetection,
                 analogies: analogyDetection
             }
-        },
-        // Legacy support and visual metrics
-        visual: {
-            eyeContactPercentage,
-            postureScore
         },
         transcript: transcript || '',
         stuttering: stutteringReport,
@@ -790,14 +779,6 @@ function generateRecommendations(metrics) {
 
     if (metrics.fillerCount > 5) {
         recommendations.push('Practice reducing filler words by pausing briefly instead of using "um" or "uh".');
-    }
-
-    if (metrics.eyeContactPercentage < 70) {
-        recommendations.push('Focus on maintaining eye contact with the camera to connect with your audience.');
-    }
-
-    if (metrics.postureScore < 70) {
-        recommendations.push('Sit up straight and keep your shoulders back for a more confident presence.');
     }
 
     if (recommendations.length === 0) {

@@ -1,610 +1,600 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useGroq } from '../hooks/useGroq';
-import { estimateReadingTime } from '../utils/formatters';
+import {
+  estimateReadingTime,
+  parseDeliveryScript
+} from '../utils/formatters';
 
-// LocalStorage key for saved scripts
 const SCRIPTS_STORAGE_KEY = 'teleprompter_saved_scripts';
 
-/**
- * Load saved scripts from localStorage
- */
 function loadSavedScripts() {
-    try {
-        const saved = localStorage.getItem(SCRIPTS_STORAGE_KEY);
-        return saved ? JSON.parse(saved) : [];
-    } catch {
-        return [];
-    }
+  try {
+    const saved = localStorage.getItem(SCRIPTS_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
 }
 
-/**
- * Save scripts to localStorage
- */
 function saveScriptsToStorage(scripts) {
-    try {
-        localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify(scripts));
-    } catch (e) {
-        console.error('Failed to save scripts:', e);
-    }
+  try {
+    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify(scripts));
+  } catch (error) {
+    console.error('Failed to save scripts:', error);
+  }
 }
 
-/**
- * ScriptEditor Component
- * AI-powered script generation with a library of saved scripts
- */
-export function ScriptEditor({ script, onScriptChange, onStartPractice }) {
-    const [topic, setTopic] = useState('');
-    const [tone, setTone] = useState('calm');
-    const [difficulty, setDifficulty] = useState('easy');
-    const [duration, setDuration] = useState(2);
-    const [useCurrentData, setUseCurrentData] = useState(false);
-    const [savedScripts, setSavedScripts] = useState([]);
-    const [showLibrary, setShowLibrary] = useState(false);
-    const [toast, setToast] = useState(null);
-    const { generateScript, isLoading, error } = useGroq();
+function getWordCount(script) {
+  return script?.trim().split(/\s+/).filter(Boolean).length || 0;
+}
 
-    // Ref for script editor section
-    const scriptEditorRef = useRef(null);
+function SectionPreview({ section, notationPreferences }) {
+  const sectionIndex = section.index.toString().padStart(2, '0');
+  const tempoVisible = (tempo) => {
+    const legacyTempo = notationPreferences.showTempo;
+    const tempoToggle = typeof legacyTempo === 'boolean' ? legacyTempo : true;
 
-    // Load saved scripts on mount
-    useEffect(() => {
-        setSavedScripts(loadSavedScripts());
-    }, []);
+    if (tempo === 'slow') {
+      return tempoToggle && notationPreferences.showSlow !== false;
+    }
+    if (tempo === 'fast') {
+      return tempoToggle && notationPreferences.showFast !== false;
+    }
+    return false;
+  };
 
-    const tones = [
-        { value: 'calm', label: '😌 Calm', desc: 'Relaxed pace' },
-        { value: 'professional', label: '💼 Professional', desc: 'Formal tone' },
-        { value: 'casual', label: '😊 Casual', desc: 'Friendly chat' },
-        { value: 'enthusiastic', label: '🔥 Enthusiastic', desc: 'High energy' },
-        { value: 'educational', label: '📚 Educational', desc: 'Clear teaching' }
-    ];
-
-    const difficulties = [
-        { value: 'easy', label: '🌱 Easy', desc: 'Simple words, short sentences', color: '#10b981' },
-        { value: 'medium', label: '🌿 Medium', desc: 'Moderate complexity', color: '#6366f1' },
-        { value: 'hard', label: '🌳 Hard', desc: 'Varied vocabulary', color: '#f59e0b' },
-        { value: 'expert', label: '🔥 Expert', desc: 'Complex structure', color: '#ef4444' }
-    ];
-
-    const handleGenerate = async () => {
-        if (!topic.trim()) return;
-
-        try {
-            if (window.posthog) {
-                window.posthog.capture('script_generated', {
-                    topic_length: topic.length,
-                    tone,
-                    difficulty,
-                    duration_target: duration,
-                    use_current_data: useCurrentData
-                });
-            }
-            const generatedScript = await generateScript(topic, tone, duration * 60, difficulty, useCurrentData);
-            onScriptChange(generatedScript);
-        } catch (err) {
-            console.error('Script generation failed:', err);
-        }
-    };
-
-    const handleSaveScript = () => {
-        if (!script.trim()) return;
-
-        const title = prompt('Enter a name for this script:', topic || 'Untitled Script');
-        if (!title) return;
-
-        if (window.posthog) {
-            window.posthog.capture('script_saved', {
-                word_count: script.trim().split(/\s+/).filter(w => w).length
-            });
-        }
-
-        const newScript = {
-            id: Date.now(),
-            title,
-            content: script,
-            createdAt: new Date().toISOString(),
-            wordCount: script.trim().split(/\s+/).filter(w => w).length
-        };
-
-        const updated = [newScript, ...savedScripts].slice(0, 20); // Keep max 20 scripts
-        setSavedScripts(updated);
-        saveScriptsToStorage(updated);
-    };
-
-    const handleLoadScript = (savedScript) => {
-        onScriptChange(savedScript.content);
-        setShowLibrary(false);
-
-        // Show toast notification
-        setToast({ message: `"${savedScript.title}" added to editor`, type: 'success' });
-        setTimeout(() => setToast(null), 3000);
-
-        // Scroll to script editor section after a brief delay
-        setTimeout(() => {
-            scriptEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 100);
-    };
-
-    const handleDeleteScript = (id) => {
-        if (!confirm('Delete this script?')) return;
-        const updated = savedScripts.filter(s => s.id !== id);
-        setSavedScripts(updated);
-        saveScriptsToStorage(updated);
-    };
-
-    const handleClear = () => {
-        onScriptChange('');
-        setTopic('');
-    };
-
-    const estimatedTime = script ? estimateReadingTime(script) : 0;
-    const wordCount = script ? script.trim().split(/\s+/).filter(w => w).length : 0;
-
-    return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Saved Scripts Library Modal */}
-            {showLibrary && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        inset: 0,
-                        background: 'rgba(0,0,0,0.8)',
-                        backdropFilter: 'blur(8px)',
-                        zIndex: 1000,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '20px'
-                    }}
-                    onClick={() => setShowLibrary(false)}
-                >
-                    <div
-                        className="glass-strong"
-                        style={{
-                            width: '100%',
-                            maxWidth: '600px',
-                            maxHeight: '80vh',
-                            overflow: 'hidden',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            borderRadius: '24px'
-                        }}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <div style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                            <h3 style={{ color: 'white', fontSize: '20px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                📚 Script Library
-                                <span style={{ fontSize: '14px', fontWeight: '400', color: 'rgba(255,255,255,0.5)' }}>
-                                    ({savedScripts.length} saved)
-                                </span>
-                            </h3>
-                        </div>
-
-                        <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
-                            {savedScripts.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.5)' }}>
-                                    <p style={{ fontSize: '48px', marginBottom: '16px' }}>📭</p>
-                                    <p>No saved scripts yet</p>
-                                    <p style={{ fontSize: '14px', marginTop: '8px' }}>Generate or write a script, then save it!</p>
-                                </div>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                    {savedScripts.map(s => (
-                                        <div
-                                            key={s.id}
-                                            style={{
-                                                background: 'rgba(255,255,255,0.05)',
-                                                borderRadius: '14px',
-                                                padding: '16px',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s',
-                                                border: '1px solid transparent'
-                                            }}
-                                            onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)'}
-                                            onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
-                                        >
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <div style={{ flex: 1 }} onClick={() => handleLoadScript(s)}>
-                                                    <h4 style={{ color: 'white', fontWeight: '600', marginBottom: '6px' }}>{s.title}</h4>
-                                                    <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', lineHeight: '1.4' }}>
-                                                        {s.content.slice(0, 100)}...
-                                                    </p>
-                                                    <div style={{ marginTop: '10px', fontSize: '12px', color: 'rgba(255,255,255,0.4)', display: 'flex', gap: '16px' }}>
-                                                        <span>{s.wordCount} words</span>
-                                                        <span>{new Date(s.createdAt).toLocaleDateString()}</span>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeleteScript(s.id); }}
-                                                    style={{
-                                                        background: 'rgba(239,68,68,0.15)',
-                                                        border: 'none',
-                                                        borderRadius: '8px',
-                                                        padding: '8px 12px',
-                                                        color: '#fca5a5',
-                                                        cursor: 'pointer',
-                                                        fontSize: '12px'
-                                                    }}
-                                                >
-                                                    🗑️
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                            <button
-                                onClick={() => setShowLibrary(false)}
-                                className="btn btn-secondary"
-                                style={{ width: '100%' }}
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
+  return (
+    <article className="roadmap-section">
+      {notationPreferences.showSections && (
+        <div className="roadmap-section-header">
+          <span className="roadmap-section-index">{sectionIndex}</span>
+          <div>
+            <h3>{section.title}</h3>
+            {section.isCanonical && (
+              <p>Editorial section cue</p>
             )}
-
-            {/* AI Generation Section */}
-            <div className="glass-strong" style={{ padding: '28px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
-                    <div>
-                        <h2 style={{ fontSize: '28px', fontWeight: '800', color: 'white', letterSpacing: '-0.02em', marginBottom: '8px' }}>
-                            Master the 9 Habits of Clearer Speaking 🎙️
-                        </h2>
-                        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '15px', maxWidth: '500px', lineHeight: '1.5' }}>
-                            Prepare structured practice material to master the 9 Habits. Focus on Pauses, Pace, and Tone.
-                        </p>
-                    </div>
-
-                    {/* Library Button */}
-                    <button
-                        onClick={() => setShowLibrary(true)}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '10px 18px',
-                            borderRadius: '12px',
-                            background: savedScripts.length > 0 ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgba(255,255,255,0.1)',
-                            border: 'none',
-                            color: 'white',
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            whiteSpace: 'nowrap'
-                        }}
-                    >
-                        📚 My Library {savedScripts.length > 0 && `(${savedScripts.length})`}
-                    </button>
-                </div>
-
-                {/* Quick Value Points (9 Habits) */}
-                <div style={{ display: 'flex', gap: '20px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                    {[
-                        { icon: '⏸️', text: 'Strategic Pauses' },
-                        { icon: '🐢', text: 'Pace Variation' },
-                        { icon: '🧠', text: 'Thought Structure' }
-                    ].map((item, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '20px' }}>
-                            <span>{item.icon}</span>
-                            <span>{item.text}</span>
-                        </div>
-                    ))}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* Topic Input */}
-                    <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
-                            What topic do you want to practice speaking on?
-                        </label>
-                        <input
-                            type="text"
-                            value={topic}
-                            onChange={(e) => setTopic(e.target.value)}
-                            placeholder="e.g., Explain my job effectively, Giving a toast, Pitching a new idea..."
-                            className="input"
-                        />
-                    </div>
-
-                    {/* Tone Selection */}
-                    <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '10px', fontWeight: '500' }}>
-                            Practice Tone
-                        </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
-                            {tones.map((t) => (
-                                <button
-                                    key={t.value}
-                                    onClick={() => setTone(t.value)}
-                                    style={{
-                                        padding: '14px 12px',
-                                        borderRadius: '14px',
-                                        textAlign: 'left',
-                                        transition: 'all 0.2s ease',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        background: tone === t.value
-                                            ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
-                                            : 'rgba(255,255,255,0.05)',
-                                        color: tone === t.value ? 'white' : 'rgba(255,255,255,0.7)',
-                                        boxShadow: tone === t.value ? '0 4px 15px rgba(99,102,241,0.3)' : 'none'
-                                    }}
-                                >
-                                    <div style={{ fontSize: '14px', fontWeight: '600' }}>{t.label}</div>
-                                    <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>{t.desc}</div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Difficulty Selection */}
-                    <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '10px', fontWeight: '500' }}>
-                            Fluency Level
-                        </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                            {difficulties.map((d) => (
-                                <button
-                                    key={d.value}
-                                    onClick={() => setDifficulty(d.value)}
-                                    style={{
-                                        padding: '14px 12px',
-                                        borderRadius: '14px',
-                                        textAlign: 'center',
-                                        transition: 'all 0.2s ease',
-                                        border: difficulty === d.value ? `2px solid ${d.color}` : '2px solid transparent',
-                                        cursor: 'pointer',
-                                        background: difficulty === d.value
-                                            ? `${d.color}22`
-                                            : 'rgba(255,255,255,0.05)',
-                                        color: difficulty === d.value ? d.color : 'rgba(255,255,255,0.7)',
-                                    }}
-                                >
-                                    <div style={{ fontSize: '16px', fontWeight: '600' }}>{d.label}</div>
-                                    <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '4px' }}>{d.desc}</div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Duration */}
-                    <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.7)', fontSize: '14px', marginBottom: '10px', fontWeight: '500' }}>
-                            Practice Duration: <span style={{ color: 'white', fontWeight: '600' }}>{duration} minute{duration > 1 ? 's' : ''}</span>
-                        </label>
-                        <input
-                            type="range"
-                            min="1"
-                            max="10"
-                            value={duration}
-                            onChange={(e) => setDuration(Number(e.target.value))}
-                            style={{
-                                width: '100%',
-                                height: '8px',
-                                borderRadius: '4px',
-                                appearance: 'none',
-                                background: 'rgba(255,255,255,0.1)',
-                                cursor: 'pointer',
-                                accentColor: '#6366f1'
-                            }}
-                        />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.4)', fontSize: '12px', marginTop: '6px' }}>
-                            <span>1 min</span>
-                            <span>5 min</span>
-                            <span>10 min</span>
-                        </div>
-                    </div>
-
-                    {/* Use Current Data Toggle */}
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '16px 20px',
-                            borderRadius: '14px',
-                            background: useCurrentData
-                                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.15))'
-                                : 'rgba(255,255,255,0.05)',
-                            border: useCurrentData ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        <div>
-                            <div style={{ color: 'white', fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                🌐 Real-World Context
-                                <span style={{
-                                    fontSize: '10px',
-                                    padding: '2px 8px',
-                                    borderRadius: '6px',
-                                    background: 'linear-gradient(135deg, #10b981, #06b6d4)',
-                                    color: 'white',
-                                    fontWeight: '500'
-                                }}>NEW</span>
-                            </div>
-                            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '4px' }}>
-                                Use latest web info to make the practice topics relevant
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setUseCurrentData(!useCurrentData)}
-                            style={{
-                                width: '52px',
-                                height: '28px',
-                                borderRadius: '14px',
-                                background: useCurrentData
-                                    ? 'linear-gradient(135deg, #10b981, #06b6d4)'
-                                    : 'rgba(255,255,255,0.2)',
-                                border: 'none',
-                                cursor: 'pointer',
-                                position: 'relative',
-                                transition: 'all 0.2s ease'
-                            }}
-                        >
-                            <div style={{
-                                width: '22px',
-                                height: '22px',
-                                borderRadius: '50%',
-                                background: 'white',
-                                position: 'absolute',
-                                top: '3px',
-                                left: useCurrentData ? '27px' : '3px',
-                                transition: 'all 0.2s ease',
-                                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                            }} />
-                        </button>
-                    </div>
-
-                    {/* Generate Button */}
-                    <div>
-                        <button
-                            onClick={handleGenerate}
-                            disabled={!topic.trim() || isLoading}
-                            className="btn btn-primary"
-                            style={{
-                                width: '100%',
-                                padding: '18px',
-                                fontSize: '18px',
-                                fontWeight: '700',
-                                boxShadow: '0 8px 25px rgba(99,102,241,0.4)',
-                                background: 'linear-gradient(135deg, #6366f1, #a855f7)'
-                            }}
-                        >
-                            {isLoading ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
-                                    <div className="spinner" style={{ width: '22px', height: '22px', borderWidth: '3px' }} />
-                                    Creating practice material...
-                                </span>
-                            ) : (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
-                                    ✨ Generate Practice Script
-                                </span>
-                            )}
-                        </button>
-
-                        {/* 9 Habits Reminder */}
-                        <div style={{
-                            marginTop: '16px',
-                            textAlign: 'center',
-                            fontSize: '12px',
-                            color: 'rgba(255,255,255,0.4)',
-                            fontWeight: '500'
-                        }}>
-                            Based on the 9 Habits of Clearer Speaking by Vin's Communication Coaching
-                        </div>
-                    </div>
-
-                    {error && (
-                        <div style={{
-                            padding: '14px 16px',
-                            background: 'rgba(239,68,68,0.15)',
-                            border: '1px solid rgba(239,68,68,0.3)',
-                            borderRadius: '12px',
-                            color: '#fca5a5',
-                            fontSize: '14px'
-                        }}>
-                            ⚠️ {error}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Toast Notification */}
-            {toast && (
-                <div
-                    style={{
-                        position: 'fixed',
-                        top: '24px',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        zIndex: 1100,
-                        padding: '14px 24px',
-                        borderRadius: '12px',
-                        background: toast.type === 'success'
-                            ? 'linear-gradient(135deg, #10b981, #059669)'
-                            : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                        color: 'white',
-                        fontSize: '14px',
-                        fontWeight: '500',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        animation: 'slideUp 0.3s ease-out'
-                    }}
-                >
-                    <span style={{ fontSize: '18px' }}>✅</span>
-                    {toast.message}
-                </div>
-            )}
-
-            {/* Script Editor */}
-            <div ref={scriptEditorRef} className="glass-strong" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                    <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '28px' }}>📝</span>
-                        Your Practice Script
-                    </h2>
-
-                    {script && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>
-                            <span>{wordCount} words</span>
-                            <span>~{Math.ceil(estimatedTime / 60)} min read</span>
-                        </div>
-                    )}
-                </div>
-
-                <div style={{ flex: 1, position: 'relative', minHeight: '200px' }}>
-                    <textarea
-                        value={script}
-                        onChange={(e) => onScriptChange(e.target.value)}
-                        placeholder={`Start typing your script or generate one above...
-                        
-Focus on:
-• Habit 1: Pause More between thoughts
-• Habit 2: Slow Down to Highlight key points
-• Habit 3: Use Declarative Statements`}
-                        className="textarea"
-                        style={{ height: '100%', minHeight: '200px' }}
-                    />
-                </div>
-
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                    <button
-                        onClick={handleClear}
-                        disabled={!script}
-                        className="btn btn-secondary"
-                    >
-                        Clear
-                    </button>
-                    <button
-                        onClick={handleSaveScript}
-                        disabled={!script}
-                        className="btn btn-secondary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                        💾 Save
-                    </button>
-                    <button
-                        onClick={onStartPractice}
-                        disabled={!script}
-                        className="btn btn-success"
-                        style={{ flex: 1 }}
-                    >
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            🎬 Start Practice Session
-                        </span>
-                    </button>
-                </div>
-            </div>
+          </div>
         </div>
-    );
+      )}
+
+      <div className="roadmap-section-body">
+        {section.paragraphs.length === 0 ? (
+          <p className="roadmap-empty">Add a paragraph under this section to build the roadmap.</p>
+        ) : (
+          section.paragraphs.map((paragraph) => (
+            <p
+              key={paragraph.id}
+              className={[
+                'roadmap-paragraph',
+                tempoVisible(paragraph.tempo) ? `tempo-${paragraph.tempo}` : ''
+              ].filter(Boolean).join(' ')}
+            >
+              {tempoVisible(paragraph.tempo) && (
+                <span className={`tempo-chip tempo-${paragraph.tempo}`}>
+                  {paragraph.tempo === 'slow' ? 'Slow' : 'Fast'}
+                </span>
+              )}
+
+              {paragraph.tokens.map((token, index) => {
+                if (token.type === 'pause') {
+                  if (!notationPreferences.showPauses) {
+                    return null;
+                  }
+
+                  return (
+                    <span key={`${paragraph.id}-pause-${index}`} className="notation-chip notation-pause">
+                      {token.value}
+                    </span>
+                  );
+                }
+
+                if (token.type === 'emphasis') {
+                  return (
+                    <span
+                      key={`${paragraph.id}-emphasis-${index}`}
+                      className={notationPreferences.showEmphasis ? 'notation-emphasis' : ''}
+                    >
+                      {token.value}
+                    </span>
+                  );
+                }
+
+                if (token.type === 'enunciation') {
+                  return (
+                    <span
+                      key={`${paragraph.id}-enunciation-${index}`}
+                      className={notationPreferences.showEnunciation ? 'notation-enunciation' : ''}
+                    >
+                      {notationPreferences.showEnunciation ? token.value : token.value}
+                    </span>
+                  );
+                }
+
+                return (
+                  <span key={`${paragraph.id}-text-${index}`}>{token.value}</span>
+                );
+              })}
+            </p>
+          ))
+        )}
+      </div>
+    </article>
+  );
+}
+
+export function ScriptEditor({
+  script,
+  onScriptChange,
+  onStartPractice,
+  notationPreferences,
+  onNotationPreferencesChange
+}) {
+  const [topic, setTopic] = useState('');
+  const [tone, setTone] = useState('calm');
+  const [difficulty, setDifficulty] = useState('medium');
+  const [duration, setDuration] = useState(2);
+  const [useCurrentData, setUseCurrentData] = useState(false);
+  const [savedScripts, setSavedScripts] = useState(loadSavedScripts);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [toast, setToast] = useState(null);
+  const editorRef = useRef(null);
+  const { generateScript, refineScript, isLoading, error } = useGroq();
+
+  const parsedScript = useMemo(() => parseDeliveryScript(script), [script]);
+  const estimatedTime = useMemo(() => estimateReadingTime(script), [script]);
+  const wordCount = useMemo(() => getWordCount(script), [script]);
+  const hasScript = script.trim().length > 0;
+
+  const resolvedPreferences = notationPreferences || {
+    showSections: true,
+    showPauses: true,
+    showSlow: true,
+    showFast: true,
+    showTempo: true,
+    showEmphasis: true,
+    showEnunciation: true,
+    distractionFree: false
+  };
+
+  const setPreference = useCallback((key, value) => {
+    if (!onNotationPreferencesChange) return;
+    onNotationPreferencesChange((prev) => ({
+      ...prev,
+      [key]: value
+    }));
+  }, [onNotationPreferencesChange]);
+
+  const captureToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+    window.setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  const handleGenerate = useCallback(async () => {
+    const trimmedTopic = topic.trim();
+    if (!trimmedTopic && !script.trim()) return;
+
+    try {
+      if (window.posthog) {
+        window.posthog.capture('script_generated', {
+          topic_length: trimmedTopic.length,
+          tone,
+          difficulty,
+          duration_target: duration,
+          use_current_data: useCurrentData
+        });
+      }
+
+      const generatedScript = script.trim()
+        ? await refineScript(script, {
+          topic: trimmedTopic || 'this script',
+          tone,
+          targetDuration: duration * 60,
+          difficulty,
+          useCurrentData
+        })
+        : await generateScript(trimmedTopic, tone, duration * 60, difficulty, useCurrentData);
+
+      onScriptChange(generatedScript);
+      captureToast(script.trim() ? 'Script refined into the roadmap format' : 'New roadmap script generated');
+    } catch (err) {
+      console.error('Script generation failed:', err);
+      captureToast('Script generation failed', 'error');
+    }
+  }, [
+    captureToast,
+    difficulty,
+    duration,
+    generateScript,
+    onScriptChange,
+    refineScript,
+    script,
+    tone,
+    topic,
+    useCurrentData
+  ]);
+
+  const handleSaveScript = useCallback(() => {
+    if (!script.trim()) return;
+
+    const title = window.prompt('Enter a name for this script:', topic || 'Untitled Script');
+    if (!title) return;
+
+    if (window.posthog) {
+      window.posthog.capture('script_saved', {
+        word_count: wordCount
+      });
+    }
+
+    const newScript = {
+      id: Date.now(),
+      title,
+      content: script,
+      createdAt: new Date().toISOString(),
+      wordCount
+    };
+
+    const updated = [newScript, ...savedScripts].slice(0, 20);
+    setSavedScripts(updated);
+    saveScriptsToStorage(updated);
+    captureToast(`"${title}" saved to your library`);
+  }, [captureToast, script, savedScripts, topic, wordCount]);
+
+  const handleLoadScript = useCallback((savedScript) => {
+    onScriptChange(savedScript.content);
+    setShowLibrary(false);
+    captureToast(`"${savedScript.title}" loaded into the canvas`);
+
+    window.setTimeout(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+  }, [captureToast, onScriptChange]);
+
+  const handleDeleteScript = useCallback((id) => {
+    if (!window.confirm('Delete this script?')) return;
+
+    const updated = savedScripts.filter((saved) => saved.id !== id);
+    setSavedScripts(updated);
+    saveScriptsToStorage(updated);
+  }, [savedScripts]);
+
+  const handleClear = useCallback(() => {
+    onScriptChange('');
+    setTopic('');
+  }, [onScriptChange]);
+
+  const showRefine = hasScript;
+  const primaryButtonLabel = showRefine ? 'Refine Script' : 'Create Script';
+
+  return (
+    <div className={`delivery-workspace ${showRefine ? 'delivery-workspace-has-dock' : ''}`}>
+      {showLibrary && (
+        <div className="library-backdrop" onClick={() => setShowLibrary(false)}>
+          <div className="library-modal glass-strong" onClick={(event) => event.stopPropagation()}>
+            <div className="library-modal-header">
+              <div>
+                <h3>Saved Scripts</h3>
+                <p>{savedScripts.length} roadmap drafts in your library</p>
+              </div>
+              <button className="btn btn-secondary" onClick={() => setShowLibrary(false)}>
+                Close
+              </button>
+            </div>
+
+            <div className="library-list">
+              {savedScripts.length === 0 ? (
+                <div className="library-empty">
+                  <div className="library-empty-icon">📭</div>
+                  <p>No saved scripts yet.</p>
+                  <span>Generate or refine one, then save it here.</span>
+                </div>
+              ) : (
+                savedScripts.map((saved) => (
+                  <button
+                    key={saved.id}
+                    className="library-item"
+                    onClick={() => handleLoadScript(saved)}
+                  >
+                    <div className="library-item-copy">
+                      <h4>{saved.title}</h4>
+                      <p>{saved.content.slice(0, 120)}{saved.content.length > 120 ? '…' : ''}</p>
+                      <span>{saved.wordCount} words · {new Date(saved.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <span
+                      className="library-delete"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteScript(saved.id);
+                      }}
+                    >
+                      Delete
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="delivery-layout">
+        <section className="delivery-main">
+          <div className="glass-strong delivery-header">
+            <div className="delivery-header-copy">
+              <div className="eyebrow">Delivery Roadmap</div>
+              <h2>Acoustic notations for live coaching while you read</h2>
+              <p>
+                Let the AI build the full script flow, then shape the delivery with pauses, tempo, emphasis, and section structure.
+              </p>
+            </div>
+
+            <div className="delivery-header-stats">
+              <div>
+                <span>Words</span>
+                <strong>{wordCount}</strong>
+              </div>
+              <div>
+                <span>Read time</span>
+                <strong>~{Math.max(1, Math.ceil(estimatedTime / 60))} min</strong>
+              </div>
+              <div>
+                <span>Sections</span>
+                <strong>{parsedScript.stats.sectionCount || 1}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-strong delivery-notation-panel">
+            <div className="sidebar-section-header">
+              <span className="eyebrow">Notation settings</span>
+              <h3>Choose which cues stay visible</h3>
+            </div>
+
+            <div className="notation-row">
+              {[
+                ['showSections', 'Section headers'],
+                ['showPauses', 'Pause markers'],
+                ['showSlow', 'Slow cues'],
+                ['showFast', 'Fast cues'],
+                ['showEmphasis', 'Emphasis words'],
+                ['showEnunciation', 'Enunciate phrases']
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="setting-row"
+                  onClick={() => setPreference(key, !resolvedPreferences[key])}
+                >
+                  <span>{label}</span>
+                  <span className={resolvedPreferences[key] ? 'toggle-pill active' : 'toggle-pill'}>
+                    {resolvedPreferences[key] ? 'On' : 'Off'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass-strong delivery-canvas">
+            <div className="delivery-canvas-header">
+              <div>
+                <span className="eyebrow">Canvas preview</span>
+                <h3>Structured delivery flow</h3>
+              </div>
+              <div className="delivery-preview-toggle">
+                <button
+                  type="button"
+                  className={resolvedPreferences.distractionFree ? 'toggle-pill active' : 'toggle-pill'}
+                  onClick={() => setPreference('distractionFree', !resolvedPreferences.distractionFree)}
+                >
+                  {resolvedPreferences.distractionFree ? 'Focus mode on' : 'Focus mode off'}
+                </button>
+              </div>
+            </div>
+
+            <div className="roadmap-preview">
+              {parsedScript.sections.length === 0 ? (
+                <div className="roadmap-empty-state">
+                  <div className="roadmap-empty-icon">✦</div>
+                  <h4>Ask AI to create your first script</h4>
+                  <p>
+                    The AI will draft the full flow with sections, pauses, emphasis, and tempo shifts for fluent speaking practice.
+                  </p>
+                </div>
+              ) : (
+                parsedScript.sections.map((section, index) => (
+                  <SectionPreview
+                    key={section.id}
+                    section={{ ...section, index: index + 1 }}
+                    notationPreferences={resolvedPreferences}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+
+          <div ref={editorRef} className="glass-strong delivery-editor">
+            <div className="delivery-editor-header">
+              <div>
+                <span className="eyebrow">Generated script</span>
+                <h3>AI writes the script, you stay focused on delivery</h3>
+              </div>
+              <div className="delivery-editor-meta">
+                <span>{wordCount} words</span>
+                <span>~{Math.max(1, Math.ceil(estimatedTime / 60))} min</span>
+              </div>
+            </div>
+
+            <div className="generated-script-note">
+              This section is read-only. Ask AI to create or refine the script, then review the flow here before practice.
+            </div>
+          </div>
+        </section>
+
+        <aside className="delivery-sidebar glass-strong">
+          <div className="sidebar-section">
+            <div className="sidebar-section-header">
+              <span className="eyebrow">Session Setup</span>
+              <h3>Shape the roadmap before it reaches the teleprompter</h3>
+            </div>
+
+            <label className="field-label" htmlFor="script-topic">
+              Prompt / topic
+            </label>
+            <input
+              id="script-topic"
+              className="input"
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+              placeholder="What is this speech about?"
+            />
+
+            <label className="field-label" htmlFor="script-tone">
+              Tone
+            </label>
+            <div className="option-grid">
+              {[
+                ['calm', 'Calm'],
+                ['professional', 'Professional'],
+                ['casual', 'Casual'],
+                ['enthusiastic', 'Enthusiastic']
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={tone === value ? 'option-pill active' : 'option-pill'}
+                  onClick={() => setTone(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label className="field-label" htmlFor="script-duration">
+              Duration
+            </label>
+            <div className="duration-block">
+              <input
+                id="script-duration"
+                type="range"
+                min="1"
+                max="10"
+                value={duration}
+                onChange={(event) => setDuration(Number(event.target.value))}
+              />
+              <div className="duration-labels">
+                <span>1 min</span>
+                <strong>{duration} min</strong>
+                <span>10 min</span>
+              </div>
+            </div>
+
+            <label className="field-label" htmlFor="script-difficulty">
+              Density
+            </label>
+            <div className="option-grid option-grid-compact">
+              {[
+                ['easy', 'Easy'],
+                ['medium', 'Medium'],
+                ['hard', 'Hard']
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={difficulty === value ? 'option-pill active' : 'option-pill'}
+                  onClick={() => setDifficulty(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="switch-card">
+              <div>
+                <strong>Use current context</strong>
+                <p>Let the model pull in current details when they help the delivery.</p>
+              </div>
+              <button
+                type="button"
+                className={useCurrentData ? 'toggle-pill active' : 'toggle-pill'}
+                onClick={() => setUseCurrentData(!useCurrentData)}
+              >
+                {useCurrentData ? 'On' : 'Off'}
+              </button>
+            </div>
+
+            <button
+              className="btn btn-primary sidebar-primary-action"
+              onClick={handleGenerate}
+              disabled={isLoading || (!topic.trim() && !script.trim())}
+            >
+              {isLoading ? 'Working…' : primaryButtonLabel}
+            </button>
+
+            {error && (
+              <div className="error-panel">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="sidebar-section">
+            <div className="sidebar-section-header">
+              <span className="eyebrow">Saved drafts</span>
+              <h3>Quick access to prior scripts</h3>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-secondary sidebar-secondary-action"
+              onClick={() => setShowLibrary(true)}
+            >
+              Open library
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <ScriptActionsDock
+        showRefine={showRefine}
+        script={script}
+        handleClear={handleClear}
+        handleSaveScript={handleSaveScript}
+        onStartPractice={onStartPractice}
+      />
+
+      {toast && (
+        <div className={`script-toast ${toast.type}`}>
+          {toast.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScriptActionsDock({ showRefine, script, handleClear, handleSaveScript, onStartPractice }) {
+  if (!showRefine) {
+    return null;
+  }
+
+  const dock = (
+    <div className="delivery-actions-dock" aria-label="Script actions">
+      <div className="glass-strong delivery-actions-dock-shell">
+        <div className="delivery-actions">
+          <button onClick={handleClear} disabled={!script} className="btn btn-secondary">
+            Clear Script
+          </button>
+          <button onClick={handleSaveScript} disabled={!script} className="btn btn-secondary">
+            Save Script
+          </button>
+          <button onClick={onStartPractice} disabled={!script} className="btn btn-success">
+            Practice
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(dock, document.body);
 }
 
 export default ScriptEditor;

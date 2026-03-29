@@ -1,7 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import CameraView from './CameraView';
-import FeedbackOverlay from './FeedbackOverlay';
-import AnalysisView from './AnalysisView';
 import { formatDuration } from '../utils/formatters';
 import { useElevenLabs } from '../hooks/useElevenLabs';
 
@@ -21,19 +18,11 @@ const CATEGORIES = [
 ];
 
 function ExtemporePractice({
-    stream,
-    onStreamReady,
-    mediaPipeReady,
-    mediaPipeLoading,
-    currentEyeContact,
-    currentPosture,
     isRecording,
     onStartRecording,
     onStopRecording,
-    onTranscribe,
     onAnalyze, // Helper to run analysis logic
     generateTopics,
-    isLoading // Global loading state
 }) {
     const [state, setState] = useState(EXT_STATES.TOPIC_SELECTION);
     const [topics, setTopics] = useState([]);
@@ -113,7 +102,7 @@ function ExtemporePractice({
 
     const handleStartPractice = () => {
         setElapsedTime(0);
-        onStartRecording(stream);
+        onStartRecording();
     };
 
     const handleStopPractice = async () => {
@@ -194,7 +183,7 @@ function ExtemporePractice({
                         <h2 className="text-5xl font-bold text-white mb-6 tracking-tight">Extempore Practice</h2>
                         <p className="text-gray-400 text-xl leading-relaxed">
                             Challenge yourself! Choose a topic below and speak for 2-3 minutes.
-                            We'll analyze your fluency and presence.
+                            We'll analyze your fluency, pacing, and clarity.
                         </p>
                     </div>
 
@@ -274,30 +263,23 @@ function ExtemporePractice({
                 {/* Header Info */}
                 <div className="flex items-center justify-between px-4">
                     <div>
-                        <span className="text-gray-400 text-sm uppercasetracking-wider">Topic</span>
+                        <span className="text-gray-400 text-sm uppercase tracking-wider">Topic</span>
                         <h3 className="text-xl font-bold text-white max-w-3xl truncate">
                             {currentTopic}
                         </h3>
                     </div>
                 </div>
 
-                {/* Camera Area */}
-                <div className="flex-1 relative rounded-2xl overflow-hidden bg-black border border-white/10">
-                    <CameraView
-                        onStreamReady={onStreamReady}
-                        isRecording={isRecording}
-                    />
+                {/* Audio Practice Area */}
+                <div className="flex-1 rounded-2xl overflow-hidden bg-black border border-white/10 p-8 flex flex-col gap-8">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <h4 className="text-2xl font-bold text-white mb-2">Speak your response aloud</h4>
+                            <p className="text-white/50 max-w-2xl">
+                                Focus on structure, clarity, and pacing. The app records audio only and analyzes your speech after you stop.
+                            </p>
+                        </div>
 
-                    <FeedbackOverlay
-                        eyeContact={currentEyeContact}
-                        posture={currentPosture}
-                        isActive={isRecording}
-                        mediaPipeReady={mediaPipeReady}
-                        mediaPipeLoading={mediaPipeLoading}
-                    />
-
-                    {/* Timer Overlay */}
-                    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
                         <div className={`px-4 py-2 rounded-full backdrop-blur-md border ${isGoalMet
                             ? 'bg-green-500/20 border-green-500/50 text-green-400'
                             : isRecording
@@ -308,11 +290,20 @@ function ExtemporePractice({
                                 {formatDuration(elapsedTime)}
                             </span>
                         </div>
-                        {isRecording && !isGoalMet && (
-                            <span className="text-xs text-white/50 mt-1 bg-black/40 px-2 py-0.5 rounded">
-                                Goal: 2:00
-                            </span>
-                        )}
+                    </div>
+
+                    <div className="flex-1 grid place-items-center rounded-3xl border border-dashed border-white/10 bg-white/5">
+                        <div className="text-center max-w-xl px-6">
+                            <div className="text-5xl mb-4">🎤</div>
+                            <p className="text-white/80 text-lg mb-2">
+                                Audio-only practice mode
+                            </p>
+                            <p className="text-white/45 text-sm">
+                                {isRecording
+                                    ? 'Keep speaking naturally. Use the recording controls below when you are finished.'
+                                    : 'Press Start Speaking to begin recording your response.'}
+                            </p>
+                        </div>
                     </div>
                 </div>
 
