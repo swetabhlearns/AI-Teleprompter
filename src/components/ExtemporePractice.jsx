@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { formatDuration } from '../utils/formatters';
-import { useElevenLabs } from '../hooks/useElevenLabs';
+import { useSarvamTTS } from '../hooks/useSarvamTTS';
 
 const EXT_STATES = {
     TOPIC_SELECTION: 'topic_selection',
@@ -36,8 +36,8 @@ function ExtemporePractice({
     const timerRef = useRef(null);
     const didInitTopicsRef = useRef(false);
 
-    // ElevenLabs TTS
-    const { speak, stop: stopTTS } = useElevenLabs();
+    // Sarvam TTS
+    const { speak, stop: stopTTS } = useSarvamTTS();
 
     // robust timer logic based on recording state
     useEffect(() => {
@@ -89,7 +89,6 @@ function ExtemporePractice({
                 topic_length: topic.length
             });
         }
-        stopTTS();
         setCurrentTopic(topic);
         setState(EXT_STATES.PRACTICE);
     };
@@ -189,9 +188,9 @@ function ExtemporePractice({
                             topics.map((topic, i) => (
                                 <button
                                     key={i}
-                                    onClick={() => {
-                                        speak(`Your topic is: ${topic}`); // Speak on selection
+                                    onClick={async () => {
                                         handleSelectTopic(topic);
+                                        void speak(`Your topic is: ${topic}`); // Speak on selection
                                     }}
                                     className="group relative flex min-h-64 h-full flex-col justify-between rounded-sm border border-outline-variant bg-surface-container-low p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary-container hover:bg-surface-container-high md:p-8"
                                 >
