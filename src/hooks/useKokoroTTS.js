@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
  * Kokoro TTS Hook - Simple version with loading indicator
  * No pre-generation, just straightforward TTS with processing overlay
  */
-export function useKokoroTTS() {
+export function useKokoroTTS({ enabled = true } = {}) {
     const [isLoading, setIsLoading] = useState(true);
     const [isReady, setIsReady] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -22,6 +22,17 @@ export function useKokoroTTS() {
         let mounted = true;
 
         const initKokoro = async () => {
+            if (!enabled) {
+                if (mounted) {
+                    setIsLoading(false);
+                    setIsReady(false);
+                    setIsGenerating(false);
+                    setIsSpeaking(false);
+                    setUsesFallback(false);
+                }
+                return;
+            }
+
             try {
                 audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -61,8 +72,52 @@ export function useKokoroTTS() {
         return () => {
             mounted = false;
             abortRef.current = true;
-            audioContextRef.current?.close().catch(() => { });
+            audioContextRef.current?.close().catch(() => {
+                // ignore audio context close errors
+            });
         };
+    }, [enabled]);
+
+    /**
+     * Web Speech API fallback
+     */
+    const speakFallback = useCallback((text) => {
+        return new Promise((resolve) => {
+            setIsSpeaking(true);
+            const synth = window.speechSynthesis;
+            synth.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            const voices = synth.getVoices();
+            const preferredVoice = voices.find(v =>
+                v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Premium'))
+            ) || voices.find(v => v.lang.startsWith('en'));
+
+            if (preferredVoice) utterance.voice = preferredVoice;
+            utterance.rate = 0.95;
+
+            utterance.onend = () => { setIsSpeaking(false); resolve(); };
+            utterance.onerror = () => { setIsSpeaking(false); resolve(); };
+            synth.speak(utterance);
+        });
+    }, []);
+
+    /**
+     * Stop speaking
+     */
+    const stop = useCallback(() => {
+        abortRef.current = true;
+
+        if (currentSourceRef.current) {
+            try { currentSourceRef.current.stop(); } catch {
+                // ignore stop errors
+            }
+            currentSourceRef.current = null;
+        }
+
+        window.speechSynthesis?.cancel();
+        setIsSpeaking(false);
+        setIsGenerating(false);
     }, []);
 
     /**
@@ -137,47 +192,7 @@ export function useKokoroTTS() {
         }
 
         return speakFallback(text);
-    }, [usesFallback]);
-
-    /**
-     * Web Speech API fallback
-     */
-    const speakFallback = useCallback((text) => {
-        return new Promise((resolve) => {
-            setIsSpeaking(true);
-            const synth = window.speechSynthesis;
-            synth.cancel();
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            const voices = synth.getVoices();
-            const preferredVoice = voices.find(v =>
-                v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Premium'))
-            ) || voices.find(v => v.lang.startsWith('en'));
-
-            if (preferredVoice) utterance.voice = preferredVoice;
-            utterance.rate = 0.95;
-
-            utterance.onend = () => { setIsSpeaking(false); resolve(); };
-            utterance.onerror = () => { setIsSpeaking(false); resolve(); };
-            synth.speak(utterance);
-        });
-    }, []);
-
-    /**
-     * Stop speaking
-     */
-    const stop = useCallback(() => {
-        abortRef.current = true;
-
-        if (currentSourceRef.current) {
-            try { currentSourceRef.current.stop(); } catch { }
-            currentSourceRef.current = null;
-        }
-
-        window.speechSynthesis?.cancel();
-        setIsSpeaking(false);
-        setIsGenerating(false);
-    }, []);
+    }, [usesFallback, speakFallback, stop]);
 
     // No-op functions for compatibility
     const pregenerate = useCallback(() => { }, []);

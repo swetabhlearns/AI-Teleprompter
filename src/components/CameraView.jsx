@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 /**
  * CameraView Component
@@ -57,11 +57,6 @@ export function CameraView({ onStreamReady, isRecording = false, showDebug = fal
             }
         };
     }, []);
-
-    /**
-     * Get the current video element for processing
-     */
-    const getVideoElement = useCallback(() => videoRef.current, []);
 
     if (!hasCamera) {
         return (

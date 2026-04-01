@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
  * Custom hook for audio-only recording with Voice Activity Detection
- * Records microphone audio for transcription and timing analysis.
+ * Records microphone audio for transcription and timing metrics.
  */
 export function useRecorder() {
     const [isRecording, setIsRecording] = useState(false);
@@ -142,7 +142,7 @@ export function useRecorder() {
                 const source = audioContextRef.current.createMediaStreamSource(stream);
                 source.connect(analyserRef.current);
             } catch (audioErr) {
-                console.warn('Failed to set up audio analysis:', audioErr);
+                console.warn('Failed to set up audio timing:', audioErr);
             }
 
             let mediaRecorder = null;

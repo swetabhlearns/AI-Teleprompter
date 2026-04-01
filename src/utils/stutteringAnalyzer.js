@@ -186,11 +186,11 @@ export function analyzePaceVariation(words, segmentDuration = 10) {
 }
 
 /**
- * Generate comprehensive stuttering report
+ * Generate comprehensive stuttering summary
  * @param {Array<{word: string, start: number, end: number}>} words - Word timing data
- * @returns {object} Complete stuttering analysis
+ * @returns {object} Complete stuttering summary
  */
-export function generateStutteringReport(words) {
+export function generateStutteringSummary(words) {
     const blocks = detectBlocks(words);
     const repetitions = detectRepetitions(words);
     const paceVariation = analyzePaceVariation(words);

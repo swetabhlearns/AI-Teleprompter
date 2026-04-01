@@ -6,6 +6,7 @@ import {
   parseDeliveryScript
 } from '../utils/formatters';
 
+const CANONICAL_ROADMAP_SECTIONS = ['Hook', 'Core Narrative', 'Call to Action', 'Finish'];
 const SCRIPTS_STORAGE_KEY = 'teleprompter_saved_scripts';
 
 function loadSavedScripts() {
@@ -31,6 +32,7 @@ function getWordCount(script) {
 
 function SectionPreview({ section, notationPreferences }) {
   const sectionIndex = section.index.toString().padStart(2, '0');
+  const shouldShowSectionHeader = notationPreferences.showSections && CANONICAL_ROADMAP_SECTIONS.includes(section.title);
   const tempoVisible = (tempo) => {
     const legacyTempo = notationPreferences.showTempo;
     const tempoToggle = typeof legacyTempo === 'boolean' ? legacyTempo : true;
@@ -46,7 +48,7 @@ function SectionPreview({ section, notationPreferences }) {
 
   return (
     <article className="roadmap-section">
-      {notationPreferences.showSections && (
+      {shouldShowSectionHeader && (
         <div className="roadmap-section-header">
           <span className="roadmap-section-index">{sectionIndex}</span>
           <div>
@@ -145,6 +147,14 @@ export function ScriptEditor({
   const estimatedTime = useMemo(() => estimateReadingTime(script), [script]);
   const wordCount = useMemo(() => getWordCount(script), [script]);
   const hasScript = script.trim().length > 0;
+  const canonicalSections = useMemo(() => {
+    const sectionOrder = new Map(CANONICAL_ROADMAP_SECTIONS.map((title, index) => [title, index]));
+
+    return parsedScript.sections
+      .filter((section) => sectionOrder.has(section.title))
+      .slice()
+      .sort((left, right) => sectionOrder.get(left.title) - sectionOrder.get(right.title));
+  }, [parsedScript.sections]);
 
   const resolvedPreferences = notationPreferences || {
     showSections: true,
@@ -270,7 +280,7 @@ export function ScriptEditor({
     <div className={`delivery-workspace ${showRefine ? 'delivery-workspace-has-dock' : ''}`}>
       {showLibrary && (
         <div className="library-backdrop" onClick={() => setShowLibrary(false)}>
-          <div className="library-modal glass-strong" onClick={(event) => event.stopPropagation()}>
+          <div className="library-modal glass-strong refined-card" onClick={(event) => event.stopPropagation()}>
             <div className="library-modal-header">
               <div>
                 <h3>Saved Scripts</h3>
@@ -319,7 +329,7 @@ export function ScriptEditor({
 
       <div className="delivery-layout">
         <section className="delivery-main">
-          <div className="glass-strong delivery-header">
+          <div className="glass-strong refined-card delivery-header">
             <div className="delivery-header-copy">
               <div className="eyebrow">Delivery Roadmap</div>
               <h2>Acoustic notations for live coaching while you read</h2>
@@ -339,12 +349,12 @@ export function ScriptEditor({
               </div>
               <div>
                 <span>Sections</span>
-                <strong>{parsedScript.stats.sectionCount || 1}</strong>
+                <strong>{canonicalSections.length || 1}</strong>
               </div>
             </div>
           </div>
 
-          <div className="glass-strong delivery-notation-panel">
+          <div className="glass-strong refined-panel delivery-notation-panel">
             <div className="sidebar-section-header">
               <span className="eyebrow">Notation settings</span>
               <h3>Choose which cues stay visible</h3>
@@ -362,11 +372,11 @@ export function ScriptEditor({
                 <button
                   key={key}
                   type="button"
-                  className="setting-row"
+                  className="setting-row refined-button-secondary"
                   onClick={() => setPreference(key, !resolvedPreferences[key])}
                 >
                   <span>{label}</span>
-                  <span className={resolvedPreferences[key] ? 'toggle-pill active' : 'toggle-pill'}>
+                  <span className={resolvedPreferences[key] ? 'toggle-pill active refined-chip refined-chip-active' : 'toggle-pill refined-chip'}>
                     {resolvedPreferences[key] ? 'On' : 'Off'}
                   </span>
                 </button>
@@ -374,7 +384,7 @@ export function ScriptEditor({
             </div>
           </div>
 
-          <div className="glass-strong delivery-canvas">
+          <div className="glass-strong refined-card delivery-canvas">
             <div className="delivery-canvas-header">
               <div>
                 <span className="eyebrow">Canvas preview</span>
@@ -392,7 +402,7 @@ export function ScriptEditor({
             </div>
 
             <div className="roadmap-preview">
-              {parsedScript.sections.length === 0 ? (
+              {canonicalSections.length === 0 ? (
                 <div className="roadmap-empty-state">
                   <div className="roadmap-empty-icon">✦</div>
                   <h4>Ask AI to create your first script</h4>
@@ -401,7 +411,7 @@ export function ScriptEditor({
                   </p>
                 </div>
               ) : (
-                parsedScript.sections.map((section, index) => (
+                canonicalSections.map((section, index) => (
                   <SectionPreview
                     key={section.id}
                     section={{ ...section, index: index + 1 }}
@@ -412,7 +422,7 @@ export function ScriptEditor({
             </div>
           </div>
 
-          <div ref={editorRef} className="glass-strong delivery-editor">
+          <div ref={editorRef} className="glass-strong refined-card delivery-editor">
             <div className="delivery-editor-header">
               <div>
                 <span className="eyebrow">Generated script</span>
@@ -430,7 +440,7 @@ export function ScriptEditor({
           </div>
         </section>
 
-        <aside className="delivery-sidebar glass-strong">
+        <aside className="delivery-sidebar glass-strong refined-panel">
           <div className="sidebar-section">
             <div className="sidebar-section-header">
               <span className="eyebrow">Session Setup</span>
@@ -442,7 +452,7 @@ export function ScriptEditor({
             </label>
             <input
               id="script-topic"
-              className="input"
+              className="input refined-input"
               value={topic}
               onChange={(event) => setTopic(event.target.value)}
               placeholder="What is this speech about?"
@@ -461,7 +471,7 @@ export function ScriptEditor({
                 <button
                   key={value}
                   type="button"
-                  className={tone === value ? 'option-pill active' : 'option-pill'}
+                  className={tone === value ? 'option-pill active refined-chip refined-chip-active' : 'option-pill refined-chip'}
                   onClick={() => setTone(value)}
                 >
                   {label}
@@ -500,7 +510,7 @@ export function ScriptEditor({
                 <button
                   key={value}
                   type="button"
-                  className={difficulty === value ? 'option-pill active' : 'option-pill'}
+                  className={difficulty === value ? 'option-pill active refined-chip refined-chip-active' : 'option-pill refined-chip'}
                   onClick={() => setDifficulty(value)}
                 >
                   {label}
@@ -515,7 +525,7 @@ export function ScriptEditor({
               </div>
               <button
                 type="button"
-                className={useCurrentData ? 'toggle-pill active' : 'toggle-pill'}
+                className={useCurrentData ? 'toggle-pill active refined-chip refined-chip-active' : 'toggle-pill refined-chip'}
                 onClick={() => setUseCurrentData(!useCurrentData)}
               >
                 {useCurrentData ? 'On' : 'Off'}
@@ -523,7 +533,7 @@ export function ScriptEditor({
             </div>
 
             <button
-              className="btn btn-primary sidebar-primary-action"
+              className="btn btn-primary sidebar-primary-action refined-button-primary"
               onClick={handleGenerate}
               disabled={isLoading || (!topic.trim() && !script.trim())}
             >
@@ -545,7 +555,7 @@ export function ScriptEditor({
 
             <button
               type="button"
-              className="btn btn-secondary sidebar-secondary-action"
+              className="btn btn-secondary sidebar-secondary-action refined-button-secondary"
               onClick={() => setShowLibrary(true)}
             >
               Open library
@@ -577,16 +587,16 @@ function ScriptActionsDock({ showRefine, script, handleClear, handleSaveScript, 
   }
 
   const dock = (
-    <div className="delivery-actions-dock" aria-label="Script actions">
-      <div className="glass-strong delivery-actions-dock-shell">
+    <div className="delivery-actions-dock refined-dock" aria-label="Script actions">
+      <div className="delivery-actions-dock-shell refined-dock-inner">
         <div className="delivery-actions">
-          <button onClick={handleClear} disabled={!script} className="btn btn-secondary">
+          <button onClick={handleClear} disabled={!script} className="btn btn-secondary refined-button-secondary">
             Clear Script
           </button>
-          <button onClick={handleSaveScript} disabled={!script} className="btn btn-secondary">
+          <button onClick={handleSaveScript} disabled={!script} className="btn btn-secondary refined-button-secondary">
             Save Script
           </button>
-          <button onClick={onStartPractice} disabled={!script} className="btn btn-success">
+          <button onClick={onStartPractice} disabled={!script} className="btn btn-success refined-button-primary">
             Practice
           </button>
         </div>

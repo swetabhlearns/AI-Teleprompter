@@ -26,6 +26,28 @@ export function useElevenLabs() {
         };
     }, []);
 
+    // Simple browser TTS fallback
+    const fallbackSpeak = useCallback((text) => {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+
+        setIsSpeaking(true);
+        window.speechSynthesis.speak(utterance);
+        setIsLoading(false);
+    }, []);
+
+    const stop = useCallback(() => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+            audioRef.current = null;
+        }
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+    }, []);
+
     /**
      * Convert text to speech using ElevenLabs API
      * @param {string} text - Text to speak
@@ -105,29 +127,7 @@ export function useElevenLabs() {
             console.log('Falling back to browser TTS due to error...');
             fallbackSpeak(text);
         }
-    }, [apiKey]);
-
-    const stop = useCallback(() => {
-        if (audioRef.current) {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
-            audioRef.current = null;
-        }
-        window.speechSynthesis.cancel();
-        setIsSpeaking(false);
-    }, []);
-
-    // Simple browser TTS fallback
-    const fallbackSpeak = (text) => {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.onend = () => setIsSpeaking(false);
-        utterance.onerror = () => setIsSpeaking(false);
-
-        setIsSpeaking(true);
-        window.speechSynthesis.speak(utterance);
-        setIsLoading(false);
-    };
+    }, [apiKey, fallbackSpeak, stop]);
 
     return {
         speak,

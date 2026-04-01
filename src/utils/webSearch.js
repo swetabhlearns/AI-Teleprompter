@@ -85,7 +85,8 @@ export async function searchWeb(query, numResults = 5) {
             console.log(`✅ SearXNG search successful via ${instance}`);
             return { success: true, results };
 
-        } catch (err) {
+        } catch (_err) {
+            void _err;
             // Silent fail for individual instances
             continue;
         }

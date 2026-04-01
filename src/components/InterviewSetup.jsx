@@ -1,12 +1,24 @@
-import { useState } from 'react';
+import InterviewArchiveBrowser from './InterviewArchiveBrowser';
 
 /**
  * Interview Setup Component
  * Configure mock interview settings before starting
  */
-export function InterviewSetup({ config, setConfig, onStartInterview, isLoading, ttsStatus }) {
-    const [activeSection, setActiveSection] = useState('college');
-
+export function InterviewSetup({
+    config,
+    setConfig,
+    onStartInterview,
+    onModeChange,
+    isLoading,
+    ttsStatus,
+    liveStatus,
+    archiveSessions = [],
+    archiveLoading = false,
+    archiveError = null,
+    onReuseArchive,
+    onExportArchive,
+    onDeleteArchive
+}) {
     const colleges = [
         { id: 'iim-a', name: 'IIM Ahmedabad', short: 'IIM-A' },
         { id: 'iim-b', name: 'IIM Bangalore', short: 'IIM-B' },
@@ -37,6 +49,20 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
         { value: 20, label: '20 min', desc: 'Full simulation' }
     ];
 
+    const modes = [
+        {
+            id: 'live',
+            name: 'Gemini 3.1 Flash Live',
+            desc: 'Real-time interviewer with the strict Gemini 3.1 Flash Live flow',
+            badge: 'Recommended'
+        },
+        {
+            id: 'groq',
+            name: 'Classic Groq',
+            desc: 'Current interview flow with fallback transcription'
+        }
+    ];
+
     const updateProfile = (field, value) => {
         setConfig(prev => ({
             ...prev,
@@ -47,108 +73,127 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
     const isProfileComplete = config.college && config.profile.name;
 
     return (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <div className="flex h-full flex-col gap-6 overflow-auto text-text">
             {/* Header */}
-            <div className="glass-strong" style={{ padding: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="glass-strong p-6">
+                <div className="flex items-start justify-between gap-4">
                     <div>
-                        <h2 style={{
-                            fontSize: '24px',
-                            fontWeight: '700',
-                            color: 'white',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            marginBottom: '8px'
-                        }}>
+                        <h2 className="mb-2 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em] text-text">
                             <span style={{ fontSize: '32px' }}>🎤</span>
                             Mock Interview Setup
                         </h2>
-                        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
+                        <p className="text-sm text-on-surface-variant">
                             Configure your practice session for MBA admission interviews
                         </p>
                     </div>
 
-                    {/* TTS Status */}
-                    {ttsStatus && (
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '8px 14px',
-                            borderRadius: '20px',
-                            background: ttsStatus.isReady
-                                ? 'rgba(16,185,129,0.15)'
-                                : ttsStatus.isLoading
-                                    ? 'rgba(99,102,241,0.15)'
-                                    : 'rgba(245,158,11,0.15)',
-                            fontSize: '12px',
-                            color: ttsStatus.isReady
-                                ? '#10b981'
-                                : ttsStatus.isLoading
-                                    ? '#a5b4fc'
-                                    : '#fbbf24'
-                        }}>
+                    {config.interviewMode === 'live' ? (
+                        <div className="flex items-center gap-2 rounded-sm border border-outline-variant bg-surface-container-low px-3 py-2 text-xs text-text">
+                            {liveStatus?.modelStatus === 'checking' ? (
+                                <>
+                                    <div className="spinner h-3 w-3 border-2" />
+                                    Resolving Gemini 3.1 Flash Live...
+                                </>
+                            ) : liveStatus?.isConnecting ? (
+                                <>
+                                    <div className="spinner h-3 w-3 border-2" />
+                                    Connecting Gemini 3.1 Flash Live...
+                                </>
+                            ) : liveStatus?.isConnected ? (
+                                <>
+                                    <div className="size-2 rounded-full bg-success" />
+                                    Gemini 3.1 Flash Live connected
+                                </>
+                            ) : liveStatus?.error ? (
+                                <>
+                                    <div className="size-2 rounded-full bg-danger" />
+                                    Gemini 3.1 Flash Live unavailable
+                                </>
+                            ) : (
+                                <>
+                                    <div className="size-2 rounded-full bg-warning" />
+                                    Gemini 3.1 Flash Live ready
+                                </>
+                            )}
+                        </div>
+                    ) : ttsStatus && (
+                        <div className="flex items-center gap-2 rounded-sm border border-outline-variant bg-surface-container-low px-3 py-2 text-xs text-text">
                             {ttsStatus.isLoading ? (
                                 <>
-                                    <div className="spinner" style={{ width: '12px', height: '12px', borderWidth: '2px' }} />
+                                    <div className="spinner h-3 w-3 border-2" />
                                     Loading AI Voice...
                                 </>
                             ) : ttsStatus.isReady ? (
                                 <>
-                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }} />
+                                    <div className="size-2 rounded-full bg-success" />
                                     {ttsStatus.usesFallback ? 'Voice Ready (Basic)' : 'AI Voice Ready ✨'}
                                 </>
                             ) : (
                                 <>
-                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fbbf24' }} />
+                                    <div className="size-2 rounded-full bg-warning" />
                                     Voice Limited
                                 </>
                             )}
                         </div>
                     )}
                 </div>
+                {config.interviewMode === 'live' && liveStatus?.error && (
+                    <div className="mt-3 rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+                        {liveStatus.error}
+                    </div>
+                )}
+                <div className="mt-4 rounded-sm border border-outline-variant bg-surface-container-low p-3">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
+                        Interview Mode
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        {modes.map((mode) => (
+                                <button
+                                    key={mode.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setConfig(prev => ({ ...prev, interviewMode: mode.id }));
+                                        onModeChange?.(mode.id);
+                                    }}
+                                    className={`rounded-sm border px-3 py-3 text-left transition ${config.interviewMode === mode.id
+                                        ? 'border-primary-container bg-primary-container/10'
+                                        : 'border-outline-variant bg-surface hover:bg-surface-container-low'
+                                    }`}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="text-sm font-semibold text-text">{mode.name}</div>
+                                    {mode.badge && (
+                                        <span className="rounded-full border border-outline-variant bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] text-on-surface-variant">
+                                            {mode.badge}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="mt-1 text-xs text-on-surface-variant">{mode.desc}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
             </div>
 
             {/* Main Content */}
-            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', overflow: 'auto' }}>
+            <div className="grid flex-1 grid-cols-1 gap-6 overflow-auto lg:grid-cols-2">
                 {/* Left Panel - College & Type */}
-                <div className="glass-strong" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="glass-strong flex flex-col gap-6 p-6">
                     {/* College Selection */}
                     <div>
-                        <label style={{
-                            display: 'block',
-                            color: 'rgba(255,255,255,0.8)',
-                            fontSize: '14px',
-                            marginBottom: '12px',
-                            fontWeight: '600'
-                        }}>
+                        <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                             🏛️ Select College
                         </label>
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(3, 1fr)',
-                            gap: '8px'
-                        }}>
+                        <div className="grid grid-cols-3 gap-2">
                             {colleges.map(college => (
                                 <button
                                     key={college.id}
                                     onClick={() => setConfig(prev => ({ ...prev, college: college.name }))}
-                                    style={{
-                                        padding: '12px 8px',
-                                        borderRadius: '10px',
-                                        border: config.college === college.name
-                                            ? '2px solid #10b981'
-                                            : '2px solid transparent',
-                                        background: config.college === college.name
-                                            ? 'rgba(16,185,129,0.15)'
-                                            : 'rgba(255,255,255,0.05)',
-                                        color: config.college === college.name ? '#10b981' : 'rgba(255,255,255,0.7)',
-                                        cursor: 'pointer',
-                                        fontSize: '12px',
-                                        fontWeight: '600',
-                                        transition: 'all 0.2s'
-                                    }}
+                                    className={`rounded-sm border px-3 py-3 text-xs font-semibold transition ${config.college === college.name
+                                        ? 'border-primary-container bg-primary-container text-on-primary-container'
+                                        : 'border-outline-variant bg-surface text-text hover:bg-surface-container-low'
+                                        }`}
                                 >
                                     {college.short}
                                 </button>
@@ -158,42 +203,23 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
 
                     {/* Interview Type */}
                     <div>
-                        <label style={{
-                            display: 'block',
-                            color: 'rgba(255,255,255,0.8)',
-                            fontSize: '14px',
-                            marginBottom: '12px',
-                            fontWeight: '600'
-                        }}>
+                        <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                             📋 Interview Type
                         </label>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div className="flex flex-col gap-2">
                             {interviewTypes.map(type => (
                                 <button
                                     key={type.id}
                                     onClick={() => setConfig(prev => ({ ...prev, interviewType: type.id }))}
-                                    style={{
-                                        padding: '14px 16px',
-                                        borderRadius: '12px',
-                                        border: config.interviewType === type.id
-                                            ? '2px solid #6366f1'
-                                            : '2px solid transparent',
-                                        background: config.interviewType === type.id
-                                            ? 'rgba(99,102,241,0.15)'
-                                            : 'rgba(255,255,255,0.05)',
-                                        color: 'white',
-                                        cursor: 'pointer',
-                                        textAlign: 'left',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '12px',
-                                        transition: 'all 0.2s'
-                                    }}
+                                    className={`flex items-center gap-3 rounded-sm border px-4 py-4 text-left transition ${config.interviewType === type.id
+                                        ? 'border-primary-container bg-surface-container-low'
+                                        : 'border-outline-variant bg-surface hover:bg-surface-container-low'
+                                        }`}
                                 >
                                     <span style={{ fontSize: '20px' }}>{type.icon}</span>
                                     <div>
-                                        <div style={{ fontWeight: '600', fontSize: '14px' }}>{type.name}</div>
-                                        <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{type.desc}</div>
+                                        <div className="text-sm font-semibold text-text">{type.name}</div>
+                                        <div className="text-xs text-on-surface-variant">{type.desc}</div>
                                     </div>
                                 </button>
                             ))}
@@ -202,38 +228,21 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
 
                     {/* Duration */}
                     <div>
-                        <label style={{
-                            display: 'block',
-                            color: 'rgba(255,255,255,0.8)',
-                            fontSize: '14px',
-                            marginBottom: '12px',
-                            fontWeight: '600'
-                        }}>
+                        <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                             ⏱️ Duration
                         </label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div className="flex gap-2">
                             {durations.map(d => (
                                 <button
                                     key={d.value}
                                     onClick={() => setConfig(prev => ({ ...prev, duration: d.value }))}
-                                    style={{
-                                        flex: 1,
-                                        padding: '12px',
-                                        borderRadius: '10px',
-                                        border: config.duration === d.value
-                                            ? '2px solid #f59e0b'
-                                            : '2px solid transparent',
-                                        background: config.duration === d.value
-                                            ? 'rgba(245,158,11,0.15)'
-                                            : 'rgba(255,255,255,0.05)',
-                                        color: config.duration === d.value ? '#f59e0b' : 'rgba(255,255,255,0.7)',
-                                        cursor: 'pointer',
-                                        textAlign: 'center',
-                                        transition: 'all 0.2s'
-                                    }}
+                                    className={`flex-1 rounded-sm border px-3 py-3 text-center transition ${config.duration === d.value
+                                        ? 'border-primary-container bg-surface-container-low text-text'
+                                        : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-low'
+                                        }`}
                                 >
-                                    <div style={{ fontWeight: '700', fontSize: '16px' }}>{d.label}</div>
-                                    <div style={{ fontSize: '10px', opacity: 0.7 }}>{d.desc}</div>
+                                    <div className="text-sm font-semibold text-text">{d.label}</div>
+                                    <div className="text-[10px] text-on-surface-variant">{d.desc}</div>
                                 </button>
                             ))}
                         </div>
@@ -241,24 +250,18 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                 </div>
 
                 {/* Right Panel - Profile */}
-                <div className="glass-strong" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="glass-strong flex flex-col gap-4 p-6">
                     <div>
-                        <label style={{
-                            display: 'block',
-                            color: 'rgba(255,255,255,0.8)',
-                            fontSize: '14px',
-                            marginBottom: '8px',
-                            fontWeight: '600'
-                        }}>
+                        <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                             👤 Your Profile
                         </label>
-                        <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '16px' }}>
+                        <p className="mb-4 text-xs text-on-surface-variant">
                             This helps generate personalized questions
                         </p>
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginBottom: '6px' }}>
+                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Name *
                         </label>
                         <input
@@ -267,12 +270,11 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                             onChange={(e) => updateProfile('name', e.target.value)}
                             placeholder="Your name"
                             className="input"
-                            style={{ padding: '12px' }}
                         />
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginBottom: '6px' }}>
+                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Work Experience
                         </label>
                         <input
@@ -281,12 +283,11 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                             onChange={(e) => updateProfile('workExperience', e.target.value)}
                             placeholder="e.g., 3 years at TCS as Software Engineer"
                             className="input"
-                            style={{ padding: '12px' }}
                         />
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginBottom: '6px' }}>
+                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Education Background
                         </label>
                         <input
@@ -295,12 +296,11 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                             onChange={(e) => updateProfile('education', e.target.value)}
                             placeholder="e.g., B.Tech in Computer Science from IIT Delhi"
                             className="input"
-                            style={{ padding: '12px' }}
                         />
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginBottom: '6px' }}>
+                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Hobbies / Interests
                         </label>
                         <input
@@ -309,12 +309,11 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                             onChange={(e) => updateProfile('hobbies', e.target.value)}
                             placeholder="e.g., Cricket, Reading, Trekking"
                             className="input"
-                            style={{ padding: '12px' }}
                         />
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginBottom: '6px' }}>
+                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Why MBA?
                         </label>
                         <textarea
@@ -322,20 +321,20 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                             onChange={(e) => updateProfile('whyMba', e.target.value)}
                             placeholder="Brief reason for pursuing MBA..."
                             className="textarea"
-                            style={{ padding: '12px', minHeight: '80px', resize: 'none' }}
                         />
                     </div>
                 </div>
             </div>
 
             {/* Start Button */}
-            <div className="glass-strong" style={{ padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
-                        {config.college ? (
+            <div className="glass-strong px-6 py-5">
+                <div className="flex items-center justify-between gap-4">
+                        <div className="text-sm text-on-surface-variant">
+                            {config.college ? (
                             <span>
                                 🏛️ {config.college} • ⏱️ {config.duration} min •
-                                📋 {interviewTypes.find(t => t.id === config.interviewType)?.name}
+                                📋 {interviewTypes.find(t => t.id === config.interviewType)?.name} •
+                                ⚡ {config.interviewMode === 'live' ? 'Gemini 3.1 Flash Live' : 'Groq'}
                             </span>
                         ) : (
                             <span>Select a college to begin</span>
@@ -344,18 +343,18 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
 
                     <button
                         onClick={onStartInterview}
-                        disabled={!isProfileComplete || isLoading}
-                        className="btn btn-success"
-                        style={{
-                            padding: '14px 32px',
-                            fontSize: '16px',
-                            opacity: isProfileComplete ? 1 : 0.5
-                        }}
+                        disabled={!isProfileComplete || isLoading || (config.interviewMode === 'live' && (!liveStatus?.isReady || Boolean(liveStatus?.error)))}
+                        className="btn btn-success px-8 py-3 text-base"
                     >
                         {isLoading ? (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <div className="spinner" style={{ width: '18px', height: '18px', borderWidth: '2px' }} />
+                            <span className="flex items-center gap-2">
+                                <div className="spinner h-[18px] w-[18px] border-2" />
                                 Preparing Questions...
+                            </span>
+                        ) : config.interviewMode === 'live' && (!liveStatus?.isReady || Boolean(liveStatus?.error)) ? (
+                            <span className="flex items-center gap-2">
+                                <div className="size-2 rounded-full bg-danger" />
+                                Gemini 3.1 Flash Live unavailable
                             </span>
                         ) : (
                             <span>🎬 Start Interview</span>
@@ -363,6 +362,15 @@ export function InterviewSetup({ config, setConfig, onStartInterview, isLoading,
                     </button>
                 </div>
             </div>
+
+            <InterviewArchiveBrowser
+                sessions={archiveSessions}
+                isLoading={archiveLoading}
+                error={archiveError}
+                onReuse={onReuseArchive}
+                onExport={onExportArchive}
+                onDelete={onDeleteArchive}
+            />
         </div>
     );
 }

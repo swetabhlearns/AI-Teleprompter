@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { formatDuration } from '../utils/formatters';
 import { useElevenLabs } from '../hooks/useElevenLabs';
 
 const EXT_STATES = {
     TOPIC_SELECTION: 'topic_selection',
     PRACTICE: 'practice',
-    REVIEW: 'review',
-    ANALYSIS: 'analysis'
+    REVIEW: 'review'
 };
 
 const CATEGORIES = [
@@ -21,7 +20,6 @@ function ExtemporePractice({
     isRecording,
     onStartRecording,
     onStopRecording,
-    onAnalyze, // Helper to run analysis logic
     generateTopics,
 }) {
     const [state, setState] = useState(EXT_STATES.TOPIC_SELECTION);
@@ -36,9 +34,10 @@ function ExtemporePractice({
     // Timer state
     const [elapsedTime, setElapsedTime] = useState(0);
     const timerRef = useRef(null);
+    const didInitTopicsRef = useRef(false);
 
     // ElevenLabs TTS
-    const { speak, stop: stopTTS, isSpeaking: isReadingTopic } = useElevenLabs();
+    const { speak, stop: stopTTS } = useElevenLabs();
 
     // robust timer logic based on recording state
     useEffect(() => {
@@ -60,12 +59,7 @@ function ExtemporePractice({
         };
     }, [isRecording]);
 
-    // Initial topic generation
-    useEffect(() => {
-        handleGenerateTopics(selectedCategory);
-    }, []);
-
-    const handleGenerateTopics = async (category) => {
+    const handleGenerateTopics = useCallback(async (category) => {
         setIsGeneratingTopics(true);
         try {
             if (window.posthog) {
@@ -78,16 +72,16 @@ function ExtemporePractice({
         } finally {
             setIsGeneratingTopics(false);
         }
-    };
+    }, [generateTopics]);
 
-    const handleTopicPlay = (e, topic) => {
-        e.stopPropagation();
-        if (isReadingTopic) {
-            stopTTS();
-        } else {
-            speak(topic);
+    // Initial topic generation
+    useEffect(() => {
+        if (didInitTopicsRef.current) {
+            return;
         }
-    };
+        didInitTopicsRef.current = true;
+        handleGenerateTopics(selectedCategory);
+    }, [handleGenerateTopics, selectedCategory]);
 
     const handleSelectTopic = (topic) => {
         if (window.posthog) {
@@ -142,54 +136,31 @@ function ExtemporePractice({
         setState(EXT_STATES.PRACTICE);
     };
 
-    const handleProceedToAnalysis = () => {
-        console.log('=== handleProceedToAnalysis CALLED ===');
-        console.log('pendingData:', pendingData);
-        console.log('pendingData.blob:', pendingData?.blob);
-        console.log('pendingData.blob size:', pendingData?.blob?.size);
-        console.log('pendingData.duration:', pendingData?.duration);
-
-        if (window.posthog) {
-            window.posthog.capture('extempore_review_action', {
-                action: 'analyze',
-                duration: pendingData?.duration
-            });
-        }
-        if (pendingData) {
-            console.log('Calling onAnalyze with blob size:', pendingData.blob?.size);
-            setState(EXT_STATES.ANALYSIS);
-            onAnalyze(pendingData.blob, pendingData.duration);
-        } else {
-            console.error('NO PENDING DATA - cannot proceed to analysis!');
-        }
-    };
-
     // Cleanup timer on unmount
     useEffect(() => {
         return () => {
             stopTTS();
         };
-    }, []);
+    }, [stopTTS]);
 
     // Phase 1: Topic Selection
     if (state === EXT_STATES.TOPIC_SELECTION) {
         return (
-            <div className="flex flex-col h-full bg-slate-900/50 rounded-2xl overflow-y-auto relative custom-scrollbar">
-                {/* Main Content Container - Centered with fixed max-width */}
-                <div className="w-full max-w-[90%] mx-auto px-4 md:px-8 py-12 flex flex-col items-center gap-4">
+            <div className="relative flex h-full flex-col overflow-y-auto rounded-sm border border-outline-variant bg-surface text-text custom-scrollbar">
+                {/* Shared page container for the full topic-selection composition */}
+                <div className="mx-auto flex h-full w-full max-w-[1680px] flex-col gap-8 px-4 py-8 md:px-6 lg:px-8 lg:py-10">
 
                     {/* Header */}
-                    <div className="text-center mb-16 w-full max-w-3xl">
-                        <h2 className="text-5xl font-bold text-white mb-6 tracking-tight">Extempore Practice</h2>
-                        <p className="text-gray-400 text-xl leading-relaxed">
+                    <div className="w-full max-w-4xl">
+                        <h2 className="text-5xl font-semibold tracking-[-0.04em] text-text">Extempore Practice</h2>
+                        <p className="mt-4 text-xl leading-relaxed text-on-surface-variant">
                             Challenge yourself! Choose a topic below and speak for 2-3 minutes.
-                            We'll analyze your fluency, pacing, and clarity.
                         </p>
                     </div>
 
                     {/* Categories */}
-                    <div className="w-full flex justify-center mb-24">
-                        <div className="flex flex-wrap justify-center gap-4 p-2 rounded-2xl bg-white/5 border border-white/5 backdrop-blur-sm">
+                    <div className="w-full">
+                        <div className="flex w-full flex-wrap items-center justify-start gap-3 rounded-sm border border-outline-variant bg-surface-container-low p-2 md:gap-4">
                             {CATEGORIES.map(cat => (
                                 <button
                                     key={cat.id}
@@ -197,9 +168,9 @@ function ExtemporePractice({
                                         setSelectedCategory(cat.id);
                                         handleGenerateTopics(cat.id);
                                     }}
-                                    className={`px-8 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${selectedCategory === cat.id
-                                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
-                                        : 'text-gray-400 hover:text-white hover:bg-white/10'
+                                    className={`rounded-sm px-6 py-3 text-sm font-semibold transition-all duration-200 md:px-8 ${selectedCategory === cat.id
+                                        ? 'bg-primary-container text-on-primary-container'
+                                        : 'text-on-surface-variant hover:bg-surface-container-high hover:text-text'
                                         }`}
                                 >
                                     {cat.label}
@@ -209,10 +180,10 @@ function ExtemporePractice({
                     </div>
 
                     {/* Topics Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full mb-16">
+                    <div className="grid w-full grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-8">
                         {isGeneratingTopics ? (
                             Array(4).fill(0).map((_, i) => (
-                                <div key={i} className="h-64 bg-white/5 rounded-3xl animate-pulse border border-white/5" />
+                                <div key={i} className="min-h-64 animate-pulse rounded-sm border border-outline-variant bg-surface-container-low" />
                             ))
                         ) : (
                             topics.map((topic, i) => (
@@ -222,15 +193,15 @@ function ExtemporePractice({
                                         speak(`Your topic is: ${topic}`); // Speak on selection
                                         handleSelectTopic(topic);
                                     }}
-                                    className="group relative flex flex-col justify-between h-64 p-8 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 hover:border-purple-500/50 hover:shadow-2xl hover:shadow-purple-500/10 hover:-translate-y-1 transition-all duration-300 text-left"
+                                    className="group relative flex min-h-64 h-full flex-col justify-between rounded-sm border border-outline-variant bg-surface-container-low p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary-container hover:bg-surface-container-high md:p-8"
                                 >
-                                    <h3 className="text-xl font-medium text-white group-hover:text-purple-200 leading-snug line-clamp-4">
+                                    <h3 className="line-clamp-4 text-xl font-medium leading-snug text-text group-hover:text-primary-container">
                                         {topic}
                                     </h3>
 
-                                    <div className="flex items-center justify-between w-full pt-6 mt-auto border-t border-white/10 group-hover:border-white/20">
-                                        <span className="text-sm font-medium text-gray-500 group-hover:text-white transition-colors">Start Speaking</span>
-                                        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all">
+                                    <div className="mt-auto flex w-full items-center justify-between border-t border-outline-variant pt-6 group-hover:border-primary-container">
+                                        <span className="text-sm font-medium text-on-surface-variant transition-colors group-hover:text-text">Start Speaking</span>
+                                        <div className="flex size-10 items-center justify-center rounded-sm bg-surface-container-high transition-all group-hover:bg-primary-container group-hover:text-on-primary-container">
                                             <span className="transform group-hover:translate-x-0.5 transition-transform text-lg">→</span>
                                         </div>
                                     </div>
@@ -242,7 +213,7 @@ function ExtemporePractice({
                     {/* Refresh Button */}
                     <button
                         onClick={() => handleGenerateTopics(selectedCategory)}
-                        className="group flex items-center gap-3 px-8 py-4 rounded-2xl text-gray-400 hover:text-white hover:bg-white/5 transition-all outline-none focus:ring-2 focus:ring-purple-500/50 mt-4"
+                        className="group mt-2 flex items-center gap-3 self-start rounded-sm border border-outline-variant px-6 py-4 text-on-surface-variant transition-all hover:bg-surface-container-low hover:text-text focus:ring-2 focus:ring-primary-container/30 outline-none md:px-8"
                         disabled={isGeneratingTopics}
                     >
                         <span className="text-2xl group-hover:rotate-180 transition-transform duration-500">🔄</span>
@@ -259,32 +230,32 @@ function ExtemporePractice({
         const isGoalMet = elapsedTime >= 120000; // 2 minutes (in ms)
 
         return (
-            <div className="flex flex-col h-full gap-4">
+            <div className="flex h-full flex-col gap-4 text-text">
                 {/* Header Info */}
                 <div className="flex items-center justify-between px-4">
                     <div>
-                        <span className="text-gray-400 text-sm uppercase tracking-wider">Topic</span>
-                        <h3 className="text-xl font-bold text-white max-w-3xl truncate">
+                        <span className="text-sm uppercase tracking-wider text-on-surface-variant">Topic</span>
+                        <h3 className="max-w-3xl truncate text-xl font-semibold text-text">
                             {currentTopic}
                         </h3>
                     </div>
                 </div>
 
                 {/* Audio Practice Area */}
-                <div className="flex-1 rounded-2xl overflow-hidden bg-black border border-white/10 p-8 flex flex-col gap-8">
+                <div className="flex flex-1 flex-col gap-8 overflow-hidden rounded-sm border border-outline-variant bg-surface-container-low p-8">
                     <div className="flex items-start justify-between gap-4">
                         <div>
-                            <h4 className="text-2xl font-bold text-white mb-2">Speak your response aloud</h4>
-                            <p className="text-white/50 max-w-2xl">
+                            <h4 className="mb-2 text-2xl font-semibold text-text">Speak your response aloud</h4>
+                            <p className="max-w-2xl text-on-surface-variant">
                                 Focus on structure, clarity, and pacing. The app records audio only and analyzes your speech after you stop.
                             </p>
                         </div>
 
-                        <div className={`px-4 py-2 rounded-full backdrop-blur-md border ${isGoalMet
-                            ? 'bg-green-500/20 border-green-500/50 text-green-400'
+                        <div className={`rounded-sm border px-4 py-2 ${isGoalMet
+                            ? 'border-success bg-success/10 text-success'
                             : isRecording
-                                ? 'bg-red-500/20 border-red-500/50 text-red-400'
-                                : 'bg-black/40 border-white/20 text-white'
+                                ? 'border-danger bg-danger/10 text-danger'
+                                : 'border-outline-variant bg-surface text-text'
                             }`}>
                             <span className="font-mono text-2xl font-bold">
                                 {formatDuration(elapsedTime)}
@@ -292,13 +263,13 @@ function ExtemporePractice({
                         </div>
                     </div>
 
-                    <div className="flex-1 grid place-items-center rounded-3xl border border-dashed border-white/10 bg-white/5">
+                    <div className="grid flex-1 place-items-center rounded-sm border border-dashed border-outline-variant bg-surface">
                         <div className="text-center max-w-xl px-6">
                             <div className="text-5xl mb-4">🎤</div>
-                            <p className="text-white/80 text-lg mb-2">
+                            <p className="mb-2 text-lg text-text">
                                 Audio-only practice mode
                             </p>
-                            <p className="text-white/45 text-sm">
+                            <p className="text-sm text-on-surface-variant">
                                 {isRecording
                                     ? 'Keep speaking naturally. Use the recording controls below when you are finished.'
                                     : 'Press Start Speaking to begin recording your response.'}
@@ -308,7 +279,7 @@ function ExtemporePractice({
                 </div>
 
                 {/* Controls */}
-                <div className="h-24 sticky bottom-0 glass-strong rounded-t-2xl flex items-center justify-center gap-4">
+                <div className="sticky bottom-0 flex h-24 items-center justify-center gap-4 rounded-sm border border-outline-variant bg-surface-container-low">
                     {!isRecording ? (
                         <>
                             <button
@@ -342,30 +313,23 @@ function ExtemporePractice({
     if (state === EXT_STATES.REVIEW) {
         return (
             <div className="flex flex-col items-center justify-center h-full gap-8">
-                <div className="text-center max-w-xl">
+                <div className="max-w-xl text-center">
                     <div className="text-6xl mb-6">🎉</div>
-                    <h2 className="text-4xl font-bold text-white mb-4">Great Job!</h2>
-                    <p className="text-xl text-gray-400 mb-8">
-                        You spoke for <span className="text-white font-mono font-bold">{formatDuration(pendingData?.duration || 0)}</span> on the topic:
+                    <h2 className="mb-4 text-4xl font-semibold text-text">Great Job!</h2>
+                    <p className="mb-8 text-xl text-on-surface-variant">
+                        You spoke for <span className="font-mono font-bold text-text">{formatDuration(pendingData?.duration || 0)}</span> on the topic:
                     </p>
-                    <div className="p-6 bg-white/5 rounded-2xl border border-white/10">
-                        <p className="text-lg text-white font-medium italic">"{currentTopic}"</p>
+                    <div className="rounded-sm border border-outline-variant bg-surface-container-low p-6">
+                        <p className="text-lg font-medium italic text-text">"{currentTopic}"</p>
                     </div>
                 </div>
 
                 <div className="flex flex-col gap-4 w-full max-w-sm">
-                    <button
-                        onClick={handleProceedToAnalysis}
-                        className="btn btn-primary w-full py-4 text-lg"
-                    >
-                        ✨ Analyze My Performance
-                    </button>
-
-                    <button
-                        onClick={handleRetry}
-                        className="btn btn-secondary w-full py-3"
-                    >
-                        🔄 Record Again
+                        <button
+                            onClick={handleRetry}
+                            className="btn btn-secondary w-full py-3"
+                        >
+                            🔄 Record Again
                     </button>
 
                     <button
@@ -381,9 +345,9 @@ function ExtemporePractice({
 
     // Phase 4: Analysis
     return (
-        <div className="flex flex-col items-center justify-center h-full">
-            <div className="spinner w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-gray-400">Processing your speech...</p>
+            <div className="flex h-full flex-col items-center justify-center">
+            <div className="spinner mb-4 h-8 w-8 border-2" />
+            <p className="text-on-surface-variant">Processing your speech...</p>
         </div>
     );
 }

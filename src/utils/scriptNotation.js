@@ -340,6 +340,8 @@ Structure:
 
 Output rules:
 - Return plain text only
+- Start immediately with ## Hook and then include ## Core Narrative, ## Call to Action, and ## Finish
+- Do not include any preamble, explanation, review notes, or Draft section
 - Keep the section headers visible in the script
 - Do not explain the markup
 - Do not use bullet lists unless they belong in the speech itself

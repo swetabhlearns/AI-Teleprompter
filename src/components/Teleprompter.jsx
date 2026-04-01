@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDeliveryScript } from '../utils/formatters';
 
+const CANONICAL_ROADMAP_SECTIONS = ['Hook', 'Core Narrative', 'Call to Action', 'Finish'];
+
 const DEFAULT_NOTATION_PREFERENCES = {
   showSections: true,
   showPauses: true,
@@ -58,7 +60,7 @@ function Token({ token, notationPreferences }) {
 function SectionBlock({ section, notationPreferences }) {
   return (
     <section className="teleprompter-section">
-      {notationPreferences.showSections && section.title !== 'Draft' && (
+      {notationPreferences.showSections && CANONICAL_ROADMAP_SECTIONS.includes(section.title) && (
         <div className="teleprompter-section-label">
           <span>{String(section.index).padStart(2, '0')}</span>
           <h3>{section.title}</h3>
@@ -118,6 +120,14 @@ export function Teleprompter({
   const resolvedPreferences = notationPreferences || DEFAULT_NOTATION_PREFERENCES;
   const parsedScript = useMemo(() => parseDeliveryScript(script), [script]);
   const resolvedSpeed = typeof speed === 'number' ? speed : uncontrolledSpeed;
+  const canonicalSections = useMemo(() => {
+    const sectionOrder = new Map(CANONICAL_ROADMAP_SECTIONS.map((title, index) => [title, index]));
+
+    return parsedScript.sections
+      .filter((section) => sectionOrder.has(section.title))
+      .slice()
+      .sort((left, right) => sectionOrder.get(left.title) - sectionOrder.get(right.title));
+  }, [parsedScript.sections]);
 
   const handleSpeedUp = useCallback(() => {
     const next = Math.min(100, resolvedSpeed + 10);
@@ -338,10 +348,10 @@ export function Teleprompter({
           paddingBottom: variant === 'panel' ? '0' : '42vh'
         }}
       >
-        {parsedScript.sections.length === 0 ? (
+        {canonicalSections.length === 0 ? (
           <p className="teleprompter-paragraph">Add a section header to shape the flow.</p>
         ) : (
-          parsedScript.sections.map((section, index) => (
+          canonicalSections.map((section, index) => (
             <SectionBlock
               key={section.id}
               section={{ ...section, index: index + 1 }}

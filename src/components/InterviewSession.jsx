@@ -13,7 +13,11 @@ export function InterviewSession({
     onTranscribe,
     onEvaluate,
     isProcessing,
-    isGeneratingAudio
+    isGeneratingAudio,
+    liveStatus,
+    onQuestionAsked,
+    onTurnTranscriptReady,
+    onAnswerComplete
 }) {
     const {
         state,
@@ -24,21 +28,19 @@ export function InterviewSession({
         isSpeaking,
         askCurrentQuestion,
         submitAnswer,
+        recordLiveAnswer,
         addEvaluation,
         skipQuestion,
         endInterview
     } = interview;
 
-    // Auto-ask question when ready (with small delay to allow UI to update)
+    // Non-live interviews auto-ask the next question when ready.
     useEffect(() => {
-        if (state === INTERVIEW_STATES.READY) {
-            // Small delay to let UI render first
-            const timer = setTimeout(() => {
-                askCurrentQuestion();
-            }, 100);
-            return () => clearTimeout(timer);
+        if (state === INTERVIEW_STATES.READY && liveStatus?.mode !== 'live') {
+            onQuestionAsked?.(currentQuestion, currentQuestionIndex);
+            askCurrentQuestion();
         }
-    }, [state, askCurrentQuestion]);
+    }, [state, askCurrentQuestion, currentQuestion, currentQuestionIndex, onQuestionAsked, liveStatus?.mode]);
 
     const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);
@@ -51,10 +53,50 @@ export function InterviewSession({
     };
 
     const handleStopAnswer = async () => {
-        const audioBlob = await onStopRecording();
+        let audioBlob;
+        let transcriptText = '';
+        try {
+            const liveResult = await onStopRecording();
+            audioBlob = liveResult?.blob || liveResult || null;
+            transcriptText = typeof liveResult?.transcript === 'string' ? liveResult.transcript : '';
+        } catch (err) {
+            console.error('Failed to stop recording:', err);
+            return;
+        }
 
-        // Transcribe the answer
-        const answer = submitAnswer('Processing...');
+        if (liveStatus?.mode === 'live' && !audioBlob) {
+            return;
+        }
+
+        let liveAnswerTranscript = transcriptText;
+
+        if (liveStatus?.mode === 'live') {
+            try {
+                if (audioBlob) {
+                    const liveTranscription = await onTranscribe?.(audioBlob);
+                    const normalizedLiveTranscript = typeof liveTranscription?.text === 'string'
+                        ? liveTranscription.text.trim()
+                        : '';
+
+                    if (normalizedLiveTranscript) {
+                        liveAnswerTranscript = normalizedLiveTranscript;
+                    }
+                }
+            } catch (err) {
+                console.warn('Live answer transcription failed, falling back to Gemini transcript snapshot:', err);
+            }
+
+            if (!liveAnswerTranscript) {
+                liveAnswerTranscript = liveStatus?.lastTranscript || currentQuestion?.text || '[Live answer saved]';
+            }
+        }
+
+        const answer = liveStatus?.mode === 'live'
+            ? recordLiveAnswer(liveAnswerTranscript, {
+                duration: 0,
+                keepListening: true
+            })
+            : submitAnswer('Processing...');
 
         if (window.posthog) {
             window.posthog.capture('interview_answer_submitted', {
@@ -63,21 +105,85 @@ export function InterviewSession({
             });
         }
 
+        if (liveStatus?.mode === 'live') {
+            void onTurnTranscriptReady?.({
+                question: currentQuestion,
+                questionIndex: currentQuestionIndex,
+                transcript: liveAnswerTranscript,
+                duration: answer.duration,
+                skipped: false,
+                assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                audioBlob
+            });
+
+            void onAnswerComplete?.({
+                question: currentQuestion,
+                questionIndex: currentQuestionIndex,
+                transcript: liveAnswerTranscript,
+                duration: answer.duration,
+                evaluation: null,
+                skipped: false,
+                assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                audioBlob
+            });
+            return;
+        }
+
         try {
             const transcription = await onTranscribe(audioBlob);
-            answer.transcript = transcription.text || '[No speech detected]';
+            const transcriptText = transcription.text || '[No speech detected]';
+            answer.transcript = transcriptText;
+            void onTurnTranscriptReady?.({
+                question: currentQuestion,
+                questionIndex: currentQuestionIndex,
+                transcript: transcriptText,
+                duration: answer.duration,
+                skipped: false,
+                assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                audioBlob
+            });
 
             // Evaluate the answer
-            const evaluation = await onEvaluate(currentQuestion, answer.transcript, { duration: answer.duration });
+            const evaluation = await onEvaluate(currentQuestion, transcriptText, { duration: answer.duration });
+            void onAnswerComplete?.({
+                question: currentQuestion,
+                questionIndex: currentQuestionIndex,
+                transcript: transcriptText,
+                duration: answer.duration,
+                evaluation,
+                skipped: false,
+                assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                audioBlob
+            });
             addEvaluation(evaluation);
         } catch (err) {
             console.error('Answer processing error:', err);
-            addEvaluation({
+            const fallbackEvaluation = {
                 score: 5,
                 strengths: ['Attempted the question'],
                 improvements: ['Try again with clearer audio'],
                 sampleAnswer: ''
+            };
+            void onTurnTranscriptReady?.({
+                question: currentQuestion,
+                questionIndex: currentQuestionIndex,
+                transcript: '[No speech detected]',
+                duration: answer.duration,
+                skipped: false,
+                assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                audioBlob
             });
+            void onAnswerComplete?.({
+                question: currentQuestion,
+                questionIndex: currentQuestionIndex,
+                transcript: '[No speech detected]',
+                duration: answer.duration,
+                evaluation: fallbackEvaluation,
+                skipped: false,
+                assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                audioBlob
+            });
+            addEvaluation(fallbackEvaluation);
         }
     };
 
@@ -86,159 +192,172 @@ export function InterviewSession({
         : 0;
 
     return (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div className="glass-strong" style={{ flex: 1, padding: '24px', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="flex h-full flex-col gap-5 overflow-auto text-text">
+            <div className="glass-strong flex flex-1 flex-col gap-5 overflow-auto p-6">
                     {/* Progress Bar */}
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        marginBottom: '16px'
-                    }}>
-                        <div style={{
-                            flex: 1,
-                            height: '4px',
-                            background: 'rgba(255,255,255,0.2)',
-                            borderRadius: '2px',
-                            overflow: 'hidden'
-                        }}>
-                            <div style={{
-                                width: `${progress}%`,
-                                height: '100%',
-                                background: 'linear-gradient(90deg, #10b981, #6366f1)',
-                                transition: 'width 0.5s ease'
-                            }} />
+                    <div className="mb-4 flex items-center gap-3">
+                        <div className="h-1 flex-1 overflow-hidden rounded-sm bg-surface-container-high">
+                            <div className="h-full bg-primary-container transition-all duration-500" style={{ width: `${progress}%` }} />
                         </div>
-                        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px', fontWeight: '600' }}>
+                        <span className="text-sm font-semibold text-on-surface-variant">
                             {currentQuestionIndex + 1} / {questions.length}
                         </span>
                     </div>
 
-                    <div style={{
-                        padding: '20px',
-                        borderRadius: '20px',
-                        background: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(255,255,255,0.08)'
-                    }}>
+                    {liveStatus?.mode === 'live' && (
+                        <div className="flex items-center justify-between gap-3 rounded-sm border border-outline-variant bg-surface-container-low px-4 py-3 text-sm">
+                            <div className="flex items-center gap-2 text-text">
+                                <div className={`size-2.5 rounded-full ${liveStatus.isConnected ? 'bg-success' : liveStatus.isConnecting ? 'bg-warning animate-pulse' : 'bg-danger'}`} />
+                                <span>
+                                    {liveStatus.isConnected
+                                        ? 'Gemini 3.1 Flash Live connected'
+                                        : liveStatus.isConnecting
+                                            ? 'Connecting Gemini 3.1 Flash Live...'
+                                            : 'Gemini 3.1 Flash Live disconnected'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-on-surface-variant">
+                                {liveStatus.turnStatus ? <span>{liveStatus.turnStatus}</span> : null}
+                                {liveStatus.lastInterrupted && <span className="text-warning">Interrupted and resumed</span>}
+                            </div>
+                        </div>
+                    )}
+
+                    {liveStatus?.mode === 'live' && liveStatus?.diagnostics && (
+                        <div className="rounded-sm border border-outline-variant bg-surface-container-low px-4 py-3 text-xs text-on-surface-variant">
+                            <div className="mb-1 font-medium uppercase tracking-[0.05em] text-text">Gemini diagnostics</div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                <span>Event: {liveStatus.diagnostics.lastEvent || 'idle'}</span>
+                                <span>Turn state: {liveStatus.turnState || 'idle'}</span>
+                                <span>Messages: {liveStatus.diagnostics.messagesReceived}</span>
+                                <span>Audio chunks: {liveStatus.diagnostics.audioChunksPlayed}</span>
+                                <span>Audio received: {liveStatus.diagnostics.lastResponseHadAudio ? 'yes' : 'no'}</span>
+                                {liveStatus.diagnostics.lastCloseCode ? (
+                                    <span>Close code: {liveStatus.diagnostics.lastCloseCode}</span>
+                                ) : null}
+                                {liveStatus.diagnostics.lastCloseReason ? (
+                                    <span>Reason: {liveStatus.diagnostics.lastCloseReason}</span>
+                                ) : null}
+                                {liveStatus.error ? <span className="text-danger">Error: {liveStatus.error}</span> : null}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="rounded-sm border border-outline-variant bg-surface-container-low p-5">
                         {isGeneratingAudio && (
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '12px',
-                                color: '#c4b5fd',
-                                marginBottom: '16px'
-                            }}>
-                                <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+                            <div className="mb-4 flex items-center gap-3 text-secondary">
+                                <div className="spinner h-4 w-4 border-2" />
                                 <span>Preparing question...</span>
                             </div>
                         )}
 
-                        {currentQuestion && (
+                        {currentQuestion && !(liveStatus?.mode === 'live' && currentQuestion?.isIntroPrompt) && (
                             <div>
-                                <div style={{
-                                    display: 'inline-block',
-                                    padding: '4px 12px',
-                                    background: 'rgba(99,102,241,0.3)',
-                                    borderRadius: '20px',
-                                    fontSize: '11px',
-                                    color: '#a5b4fc',
-                                    marginBottom: '10px',
-                                    fontWeight: '500'
-                                }}>
+                                <div className="mb-2 inline-flex rounded-sm border border-outline-variant bg-surface px-3 py-1 text-[11px] font-medium uppercase tracking-[0.05em] text-on-surface-variant">
                                     {currentQuestion.category}
                                 </div>
-                                <h2 style={{
-                                    color: 'white',
-                                    fontSize: '22px',
-                                    fontWeight: '600',
-                                    lineHeight: '1.5'
-                                }}>
+                                <h2 className="text-[22px] font-semibold leading-[1.5] text-text">
                                     {isSpeaking && <span style={{ marginRight: '10px' }}>🔊</span>}
                                     {currentQuestion.text}
                                 </h2>
+                                {liveStatus?.mode === 'live' && liveStatus.lastAssistantText && (
+                                    <div className="mt-3 rounded-sm border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface-variant">
+                                        <div className="mb-1 text-[11px] uppercase tracking-[0.05em]">Live response</div>
+                                        {liveStatus.lastAssistantText}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {liveStatus?.mode === 'live' && currentQuestion?.isIntroPrompt && (
+                            <div className="rounded-sm border border-dashed border-outline-variant bg-surface px-4 py-4 text-sm text-on-surface-variant">
+                                <div className="mb-1 text-[11px] uppercase tracking-[0.05em] text-text">Ready when you are</div>
+                                <p>Press Start Interview, then say hello or introduce yourself. The interviewer will begin after your opening words.</p>
                             </div>
                         )}
 
                         {state === INTERVIEW_STATES.ASKING && (
-                            <div style={{
-                                marginTop: '16px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                color: '#f59e0b',
-                                fontSize: '14px'
-                            }}>
-                                <div style={{
-                                    width: '8px',
-                                    height: '8px',
-                                    borderRadius: '50%',
-                                    background: '#f59e0b',
-                                    animation: 'pulse 2s infinite'
-                                }} />
+                            <div className="mt-4 flex items-center gap-2 text-warning text-sm">
+                                <div className="size-2 rounded-full bg-warning animate-pulse" />
                                 Interviewer is speaking...
                             </div>
                         )}
 
+                        {state === INTERVIEW_STATES.PROCESSING && liveStatus?.mode !== 'live' && (
+                            <div className="mt-4 flex items-center gap-2 text-primary-container text-sm">
+                                <div className="spinner h-3.5 w-3.5 border-2" />
+                                Processing your response...
+                            </div>
+                        )}
+
                         {state === INTERVIEW_STATES.EVALUATING && (
-                            <div style={{
-                                marginTop: '16px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                color: '#6366f1',
-                                fontSize: '14px'
-                            }}>
-                                <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                            <div className="mt-4 flex items-center gap-2 text-primary-container text-sm">
+                                <div className="spinner h-3.5 w-3.5 border-2" />
                                 Analyzing your answer...
                             </div>
                         )}
 
                         {state === INTERVIEW_STATES.LISTENING && (
-                            <div style={{
-                                marginTop: '16px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '12px'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.7)' }}>
-                                    <div style={{
-                                        width: '10px',
-                                        height: '10px',
-                                        borderRadius: '50%',
-                                        background: isRecording ? '#ef4444' : '#6366f1'
-                                    }} />
-                                    <span>Answer time</span>
+                            <div className="mt-4 flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2 text-on-surface-variant">
+                                    <div className={`size-2.5 rounded-full ${isRecording ? 'bg-danger' : 'bg-primary-container'}`} />
+                                    <span>
+                                        {liveStatus?.mode === 'live'
+                                            ? (isRecording ? 'Live answer time' : 'Ready for next answer')
+                                            : 'Answer time'}
+                                    </span>
                                 </div>
-                                <span style={{
-                                    color: 'white',
-                                    fontFamily: 'monospace',
-                                    fontSize: '18px',
-                                    fontWeight: '600'
-                                }}>
-                                    {formatTime(answerTime)}
-                                </span>
+                                {(!liveStatus?.mode || liveStatus?.mode !== 'live' || isRecording) && (
+                                    <span className="font-mono text-lg font-semibold text-text">
+                                        {formatTime(answerTime)}
+                                    </span>
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
             {/* Controls */}
-            <div className="glass-strong" style={{ padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="glass-strong px-6 py-5">
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
                         {/* Tips */}
                         {state === INTERVIEW_STATES.LISTENING && currentQuestion?.keyPoints && (
-                            <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>
+                            <div className="text-sm text-on-surface-variant">
                                 💡 Key points: {currentQuestion.keyPoints.slice(0, 2).join(' • ')}
                             </div>
                         )}
                     </div>
 
-                    <div style={{ display: 'flex', gap: '12px' }}>
+                    <div className="flex gap-3">
                         {/* Skip Button */}
                         <button
                             onClick={() => {
                                 if (window.posthog) window.posthog.capture('interview_question_skipped');
+                                void onTurnTranscriptReady?.({
+                                    question: currentQuestion,
+                                    questionIndex: currentQuestionIndex,
+                                    transcript: '[Skipped]',
+                                    duration: 0,
+                                    skipped: true,
+                                    assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                                    audioBlob: null
+                                });
+                                void onAnswerComplete?.({
+                                    question: currentQuestion,
+                                    questionIndex: currentQuestionIndex,
+                                    transcript: '[Skipped]',
+                                    duration: 0,
+                                    evaluation: {
+                                        score: 0,
+                                        strengths: [],
+                                        improvements: ['Question was skipped'],
+                                        sampleAnswer: '',
+                                        skipped: true
+                                    },
+                                    skipped: true,
+                                    assistantText: liveStatus?.lastAssistantText || currentQuestion?.text || '',
+                                    audioBlob: null
+                                });
                                 skipQuestion();
                             }}
                             disabled={state === INTERVIEW_STATES.EVALUATING || isProcessing || isGeneratingAudio}
@@ -251,16 +370,14 @@ export function InterviewSession({
                         {state === INTERVIEW_STATES.LISTENING && !isRecording ? (
                             <button
                                 onClick={handleStartAnswer}
-                                className="btn btn-success"
-                                style={{ padding: '12px 32px' }}
+                                className="btn btn-success px-8 py-3"
                             >
-                                🎤 Start Speaking
+                                {liveStatus?.mode === 'live' ? '🎬 Start Interview' : '🎤 Start Speaking'}
                             </button>
                         ) : state === INTERVIEW_STATES.LISTENING && isRecording ? (
                             <button
                                 onClick={handleStopAnswer}
-                                className="btn btn-danger"
-                                style={{ padding: '12px 32px' }}
+                                className="btn btn-danger px-8 py-3"
                             >
                                 ✓ Done Answering
                             </button>
@@ -271,11 +388,6 @@ export function InterviewSession({
                             onClick={endInterview}
                             disabled={isGeneratingAudio}
                             className="btn btn-secondary"
-                            style={{
-                                background: 'rgba(239,68,68,0.15)',
-                                borderColor: 'rgba(239,68,68,0.3)',
-                                color: '#fca5a5'
-                            }}
                         >
                             End Interview
                         </button>

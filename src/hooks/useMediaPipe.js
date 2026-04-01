@@ -186,8 +186,6 @@ function analyzeEyeContact(landmarks) {
     const rightEyeBottom = landmarks[374];
     const noseTip = landmarks[1];
     const foreheadCenter = landmarks[10];
-    const chin = landmarks[152];
-
     // === HEAD POSE CHECK ===
     // If head is turned significantly away from camera, not looking at camera
     const noseX = noseTip?.x || 0.5;

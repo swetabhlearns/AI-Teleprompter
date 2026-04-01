@@ -1,54 +1,22 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useMemo } from 'react';
+import { useSessionStore } from '../stores/sessionStore';
 
 const SessionContext = createContext(null);
 
 export function SessionProvider({ children }) {
-    // Recording result state (after stopping, before analysis)
-    const [recordingResult, setRecordingResult] = useState(null);
-    const [hasRecording, setHasRecording] = useState(false);
-    const [sessionDuration, setSessionDuration] = useState(0);
+    const recordingResult = useSessionStore((state) => state.recordingResult);
+    const hasRecording = useSessionStore((state) => state.hasRecording);
+    const sessionDuration = useSessionStore((state) => state.sessionDuration);
+    const volumeHistory = useSessionStore((state) => state.volumeHistory);
+    const resetSession = useSessionStore((state) => state.resetSession);
+    const saveRecording = useSessionStore((state) => state.saveRecording);
 
-    const [volumeHistory, setVolumeHistory] = useState([]); // Store volume history for analysis
-
-    // Reset session state
-    const resetSession = useCallback(() => {
-        setRecordingResult(null);
-        setHasRecording(false);
-        setVolumeHistory([]);
-        setSessionDuration(0);
-    }, []);
-
-    // Save recording with volume history for analysis
-    const saveRecording = useCallback((blob, duration, volHistory = []) => {
-        setSessionDuration(duration);
-        setRecordingResult(blob);
-        setVolumeHistory(volHistory);
-        setHasRecording(true);
-
-        console.log('Recording saved. Metrics:', {
-            blobSize: blob?.size || 0,
-            duration,
-            volumeSamples: volHistory.length
-        });
-
-        return {
-            blobSize: blob?.size || 0,
-            duration,
-            volumeSamples: volHistory.length
-        };
-    }, []);
-
-    // Memoize the context value to prevent unnecessary re-renders
     const value = useMemo(() => ({
-        // Recording state
         recordingResult,
         hasRecording,
         sessionDuration,
-
-        // Metrics
         volumeHistory,
-
-        // Actions
         resetSession,
         saveRecording
     }), [
