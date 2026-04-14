@@ -32,8 +32,8 @@ function clearStoredTopic() {
 
 export function ExtemporeSelectionRoute() {
   const navigate = useNavigate();
-  const { isRecording, startRecording, stopRecording } = useRecorder();
-  const { generateExtemporeTopics } = useGroq();
+  const { isRecording, duration, audioLevel, isSpeaking, startRecording, stopRecording } = useRecorder();
+  const { generateExtemporeTopics, generateExtemporeCoachSuggestion, transcribeAudio } = useGroq();
 
   const handleStartExtempore = useCallback(() => {
     if (window.posthog) window.posthog.capture('extempore_started');
@@ -55,9 +55,14 @@ export function ExtemporeSelectionRoute() {
     <div className="flex flex-1 flex-col">
       <ExtemporePractice
         isRecording={isRecording}
+        duration={duration}
+        audioLevel={audioLevel}
+        isSpeaking={isSpeaking}
         onStartRecording={handleStartExtempore}
         onStopRecording={handleStopPractice}
         generateTopics={generateExtemporeTopics}
+        generateCoachSuggestion={generateExtemporeCoachSuggestion}
+        transcribeAudio={transcribeAudio}
         mode="selection"
         onTopicLocked={handleTopicLocked}
       />
@@ -67,8 +72,8 @@ export function ExtemporeSelectionRoute() {
 
 export function ExtemporeLiveRoute() {
   const navigate = useNavigate();
-  const { isRecording, startRecording, stopRecording } = useRecorder();
-  const { generateExtemporeTopics } = useGroq();
+  const { isRecording, duration, audioLevel, isSpeaking, startRecording, stopRecording } = useRecorder();
+  const { generateExtemporeTopics, generateExtemporeCoachSuggestion, transcribeAudio } = useGroq();
   const selectedTopic = getStoredTopic();
 
   const handleStartExtempore = useCallback(() => {
@@ -95,9 +100,14 @@ export function ExtemporeLiveRoute() {
     <div className="flex flex-1 flex-col">
       <ExtemporePractice
         isRecording={isRecording}
+        duration={duration}
+        audioLevel={audioLevel}
+        isSpeaking={isSpeaking}
         onStartRecording={handleStartExtempore}
         onStopRecording={handleStopPractice}
         generateTopics={generateExtemporeTopics}
+        generateCoachSuggestion={generateExtemporeCoachSuggestion}
+        transcribeAudio={transcribeAudio}
         mode="live"
         selectedTopic={selectedTopic}
         onChooseDifferentTopic={handleChooseDifferentTopic}

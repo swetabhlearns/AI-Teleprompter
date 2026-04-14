@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-display: 'Newsreader', 'Georgia', 'Times New Roman', serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
-  --color-surface: #fbf6ea;
-  --color-surface-container-low: #f3ecd9;
-  --color-surface-container-high: #eee5d0;
-  --color-outline-variant: #d6c8ab;
-  --color-primary-container: #1d5d52;
-  --color-secondary: #9b6a3f;
-  --color-success: #2d7a5f;
-  --color-warning: #c89243;
-  --color-danger: #a8463b;
-  --color-text: #18332e;
-  --color-on-surface-variant: #6a746e;
+  --color-surface: #f8fafc;
+  --color-surface-container-low: #eef3f8;
+  --color-surface-container-high: #e6edf4;
+  --color-outline-variant: #c7d3df;
+  --color-primary-container: #0f766e;
+  --color-secondary: #2563eb;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-text: #0f172a;
+  --color-on-surface-variant: #475569;
   --color-on-primary-container: #ffffff;
 
   --radius-sm: 10px;
@@ -24,15 +24,15 @@
 }
 
 :root {
-  --font-refined: 'Bricolage Grotesque', system-ui, sans-serif;
-  --primary: #1d5d52;
-  --secondary: #9b6a3f;
-  --accent-cyan: #1d5d52;
-  --accent-emerald: #2d7a5f;
-  --signal-indigo: #1d5d52;
-  --signal-teal: #9b6a3f;
-  --danger: #a8463b;
-  --warning: #c89243;
+  --font-refined: 'Inter', system-ui, sans-serif;
+  --primary: #0f766e;
+  --secondary: #2563eb;
+  --accent-cyan: #0f766e;
+  --accent-emerald: #0f766e;
+  --signal-indigo: #2563eb;
+  --signal-teal: #0f766e;
+  --danger: #dc2626;
+  --warning: #d97706;
   --app-shell-nav-height: 98px;
   --extempore-live-dock-space: 166px;
 
@@ -69,9 +69,9 @@
 }
 
 /* Base Styles */
-* {
-  margin: 0;
-  padding: 0;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -96,9 +96,9 @@ body::before {
   width: 100%;
   height: 100%;
   background:
-    radial-gradient(circle at 0% 0%, rgba(29, 93, 82, 0.08) 0%, transparent 28%),
-    radial-gradient(circle at 100% 0%, rgba(155, 106, 63, 0.06) 0%, transparent 30%),
-    linear-gradient(180deg, rgba(251, 246, 234, 0.95) 0%, rgba(251, 246, 234, 1) 100%);
+    radial-gradient(circle at 0% 0%, rgba(15, 118, 110, 0.08) 0%, transparent 28%),
+    radial-gradient(circle at 100% 0%, rgba(37, 99, 235, 0.06) 0%, transparent 30%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(248, 250, 252, 1) 100%);
   z-index: -2;
 }
 
@@ -109,7 +109,7 @@ body::after {
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: linear-gradient(rgba(24, 51, 46, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(24, 51, 46, 0.04) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
   background-size: 28px 28px;
   opacity: 0.5;
   z-index: -1;
@@ -739,15 +739,17 @@ body::after {
   }
 
   .refined-surface {
-    @apply rounded-sm border border-outline-variant bg-surface shadow-none;
+    @apply rounded-[24px] border border-outline-variant bg-surface shadow-none;
   }
 
   .refined-card {
-    @apply rounded-sm border border-outline-variant bg-surface-container-high shadow-none;
+    @apply rounded-[24px] border border-outline-variant bg-surface-container-high shadow-none;
+    padding: var(--space-6);
   }
 
   .refined-panel {
-    @apply rounded-sm border border-outline-variant bg-surface-container-low shadow-none;
+    @apply rounded-[20px] border border-outline-variant bg-surface-container-low shadow-none;
+    padding: var(--space-5);
   }
 
   .refined-heading {
@@ -763,14 +765,14 @@ body::after {
   }
 
   .refined-input {
-    @apply w-full rounded-sm border border-outline-variant bg-surface px-4 py-3 text-sm text-text outline-none transition focus:border-primary-container focus:ring-2 focus:ring-primary-container/15;
+    @apply w-full rounded-[18px] border border-outline-variant bg-surface px-4 py-3 text-sm text-text outline-none transition focus:border-primary-container focus:ring-2 focus:ring-primary-container/15;
   }
 
   .refined-select {
-    @apply w-full cursor-pointer rounded-sm border border-outline-variant bg-surface text-sm text-text outline-none transition focus:border-primary-container focus:ring-2 focus:ring-primary-container/15;
-    padding: var(--pad-input-sm);
+    @apply w-full cursor-pointer rounded-[18px] border border-outline-variant bg-surface text-sm text-text outline-none transition focus:border-primary-container focus:ring-2 focus:ring-primary-container/15;
+    padding: 12px 16px;
     padding-right: 36px;
-    min-height: var(--h-md);
+    min-height: 44px;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -782,25 +784,25 @@ body::after {
   }
 
   .refined-textarea {
-    @apply w-full rounded-sm border border-outline-variant bg-surface px-4 py-4 text-sm text-text outline-none transition focus:border-primary-container focus:ring-2 focus:ring-primary-container/15;
+    @apply w-full rounded-[18px] border border-outline-variant bg-surface px-4 py-4 text-sm text-text outline-none transition focus:border-primary-container focus:ring-2 focus:ring-primary-container/15;
   }
 
   .refined-button-primary {
     @apply inline-flex items-center justify-center rounded-full bg-primary-container text-sm font-semibold text-on-primary-container transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-primary-container/20 disabled:opacity-40;
-    padding: var(--pad-btn-md);
-    min-height: var(--h-md);
+    padding: 12px 20px;
+    min-height: 44px;
   }
 
   .refined-button-secondary {
     @apply inline-flex items-center justify-center rounded-full border border-outline-variant bg-transparent text-sm font-medium text-text transition hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-primary-container/20 disabled:opacity-40;
-    padding: var(--pad-btn-md);
-    min-height: var(--h-md);
+    padding: 12px 20px;
+    min-height: 44px;
   }
 
   .refined-button-tertiary {
-    @apply inline-flex items-center justify-center rounded-sm text-sm font-medium text-on-surface-variant transition hover:text-text;
-    padding: var(--pad-btn-sm);
-    min-height: var(--h-sm);
+    @apply inline-flex items-center justify-center rounded-full text-sm font-medium text-on-surface-variant transition hover:text-text;
+    padding: 10px 16px;
+    min-height: 40px;
   }
 
   .refined-chip {
@@ -830,7 +832,7 @@ body::after {
   .refined-dock-inner {
     @apply pointer-events-auto mx-auto flex w-fit max-w-[min(920px,calc(100vw-32px))] items-center justify-center rounded-full border border-outline-variant bg-surface-container-low shadow-[0_14px_34px_rgba(24,51,46,0.06)];
     gap: var(--gap-md);
-    padding: var(--space-md) var(--space-xl);
+    padding: 12px 16px;
   }
 
   .extempore-live-shell {
@@ -859,7 +861,7 @@ body::after {
   }
 
   .extempore-live-panel {
-    padding: 16px;
+    padding: 20px;
   }
 
   .prep-accordion-item {
@@ -1897,29 +1899,29 @@ body::after {
 .delivery-generator-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .script-filters-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
   align-items: end;
 }
 
 .script-filter {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .script-filter-check {
   flex-direction: row;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  min-height: var(--h-md);
+  gap: 12px;
+  padding: 12px 14px;
+  min-height: 44px;
   border: 1px solid var(--color-outline-variant);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -1964,7 +1966,7 @@ body::after {
   text-align: left;
   max-width: min(86%, 980px);
   margin: 0 auto;
-  padding: 40px;
+  padding: 32px;
   font-size: clamp(1.35rem, 2.8vw, 2.25rem);
   line-height: 1.78;
   color: var(--color-text);
@@ -1972,9 +1974,9 @@ body::after {
 }
 
 .teleprompter-section {
-  margin-bottom: 26px;
-  padding: 18px 20px;
-  border-radius: 4px;
+  margin-bottom: 24px;
+  padding: 16px 18px;
+  border-radius: 18px;
   background: var(--color-surface-container-low);
   border: 1px solid var(--color-outline-variant);
 }
@@ -1995,9 +1997,9 @@ body::after {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 20px;
-  border-radius: 4px;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
   background: var(--color-surface);
   border: 1px solid var(--color-outline-variant);
   box-shadow: none;
@@ -2048,7 +2050,7 @@ body::after {
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 4px;
+  border-radius: 999px;
   border: 1px solid var(--color-outline-variant);
   color: var(--color-text);
   background: var(--color-surface-container-low);
@@ -2058,6 +2060,7 @@ body::after {
 .teleprompter-pause-button {
   width: 46px;
   height: 46px;
+  border-radius: 999px;
 }
 
 .teleprompter-pause-button.running {
@@ -2205,8 +2208,8 @@ body::after {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
-  padding: var(--space-xl) var(--space-2xl) var(--space-2xl);
+  gap: 20px;
+  padding: 20px 24px 24px;
   background:
     radial-gradient(circle at top center, rgba(29, 93, 82, 0.09) 0%, transparent 32%),
     radial-gradient(circle at bottom right, rgba(155, 106, 63, 0.07) 0%, transparent 36%),
@@ -2218,7 +2221,7 @@ body::after {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex: 0 0 auto;
 }
 
@@ -2238,18 +2241,18 @@ body::after {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  border-radius: 28px;
+  border-radius: 24px;
 }
 
 .practice-fullscreen-stage .teleprompter-overlay {
   position: absolute;
   inset: 0;
-  border-radius: 28px;
+  border-radius: 24px;
 }
 
 .practice-fullscreen-stage .teleprompter-text {
   max-width: min(82%, 1100px);
-  padding: 48px 24px 200px;
+  padding: 36px 24px 180px;
   font-size: clamp(1.8rem, 4.2vw, 3.7rem);
   line-height: 1.2;
 }
@@ -2267,15 +2270,15 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 18px 24px;
-  border-radius: 4px;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 24px;
 }
 
 .practice-dock-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -2299,7 +2302,7 @@ body::after {
 .practice-dock-speed {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 220px;
 }
 
@@ -2313,15 +2316,15 @@ body::after {
 
 .practice-record-button {
   min-width: 190px;
-  padding: 16px 28px;
+  padding: 12px 20px;
 }
 
 .practice-live-pill {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 4px;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 18px;
   background: var(--color-surface-container-low);
   border: 1px solid var(--color-outline-variant);
 }
@@ -2357,8 +2360,8 @@ body::after {
   height: 100%;
   min-height: 0;
   max-height: 100%;
-  padding: 18px;
-  border-radius: 4px;
+  padding: 20px;
+  border-radius: 20px;
   overflow: hidden;
   background: var(--color-surface-container-low);
   border: 1px solid var(--color-outline-variant);
@@ -2368,7 +2371,7 @@ body::after {
   position: relative;
   min-height: 100%;
   height: 100%;
-  border-radius: 4px;
+  border-radius: 20px;
   overflow: hidden;
 }
 
@@ -2378,7 +2381,7 @@ body::after {
 
 .practice-teleprompter-shell .teleprompter-text {
   max-width: none;
-  padding: 28px 24px 120px;
+  padding: 24px 20px 112px;
   font-size: clamp(1.15rem, 2vw, 1.6rem);
   line-height: 1.7;
 }
@@ -2389,7 +2392,7 @@ body::after {
 
 .teleprompter-panel-text {
   margin: 0;
-  padding: 12px 6px 18px;
+  padding: 10px 4px 16px;
   max-width: none;
   min-height: 0;
   flex: 1 1 0;
@@ -2423,7 +2426,7 @@ body::after {
   justify-content: center;
   min-height: 100%;
   text-align: center;
-  padding: 24px;
+  padding: 20px;
 }
 
 .teleprompter-panel .teleprompter-hints {

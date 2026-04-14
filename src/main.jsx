@@ -6,6 +6,8 @@ import { SpeedInsights } from '@vercel/speed-insights/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { SessionProvider } from './contexts/SessionContext'
 import { queryClient } from './app/queryClient'
+import '@knadh/oat/oat.min.css'
+import '@knadh/oat/js/index.js'
 import './index.css'
 import App from './App.jsx'
 

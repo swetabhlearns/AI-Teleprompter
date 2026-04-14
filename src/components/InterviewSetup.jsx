@@ -1,4 +1,5 @@
 import InterviewArchiveBrowser from './InterviewArchiveBrowser';
+import { OatButton, OatCard, OatInput, OatTextarea } from './ui/OatComponents';
 
 /**
  * Interview Setup Component
@@ -75,7 +76,7 @@ export function InterviewSetup({
     return (
         <div className="flex h-full flex-col gap-6 overflow-auto text-text">
             {/* Header */}
-            <div className="refined-card p-6">
+            <OatCard className="refined-card">
                 <div className="flex items-start justify-between gap-4">
                     <div>
                         <h2 className="font-display mb-2 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em] text-text">
@@ -142,44 +143,42 @@ export function InterviewSetup({
                         {liveStatus.error}
                     </div>
                 )}
-                <div className="mt-4 rounded-[22px] border border-outline-variant bg-surface-container-low p-3">
+                <div className="mt-4 rounded-[20px] border border-outline-variant bg-surface-container-low p-3">
                     <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                         Interview Mode
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                         {modes.map((mode) => (
-                                <button
-                                    key={mode.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setConfig(prev => ({ ...prev, interviewMode: mode.id }));
-                                        onModeChange?.(mode.id);
-                                    }}
-                                className={`rounded-[18px] border px-3 py-3 text-left transition ${config.interviewMode === mode.id
-                                        ? 'border-primary-container bg-primary-container/10'
-                                        : 'border-outline-variant bg-surface hover:bg-surface-container-low'
-                                    }`}
+                            <OatButton
+                                key={mode.id}
+                                type="button"
+                                onClick={() => {
+                                    setConfig((prev) => ({ ...prev, interviewMode: mode.id }));
+                                    onModeChange?.(mode.id);
+                                }}
+                                className={`rounded-[18px] border px-3 py-3 text-left transition ${
+                                  config.interviewMode === mode.id
+                                    ? 'border-primary-container bg-primary-container/10'
+                                    : 'border-outline-variant bg-surface hover:bg-surface-container-low'
+                                }`}
                             >
                                 <div className="flex items-center justify-between gap-2">
                                     <div className="text-sm font-semibold text-text">{mode.name}</div>
                                     {mode.badge && (
-                                        <span className="refined-chip">
-                                            {mode.badge}
-                                        </span>
+                                        <span className="refined-chip">{mode.badge}</span>
                                     )}
                                 </div>
                                 <div className="mt-1 text-xs text-on-surface-variant">{mode.desc}</div>
-                            </button>
+                            </OatButton>
                         ))}
                     </div>
                 </div>
-
-            </div>
+            </OatCard>
 
             {/* Main Content */}
             <div className="grid flex-1 grid-cols-1 gap-6 overflow-auto lg:grid-cols-2">
                 {/* Left Panel - College & Type */}
-                <div className="refined-card flex flex-col gap-6 p-6">
+                <OatCard className="refined-card flex flex-col gap-6">
                     {/* College Selection */}
                     <div>
                         <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
@@ -187,7 +186,7 @@ export function InterviewSetup({
                         </label>
                         <div className="grid grid-cols-3 gap-2">
                             {colleges.map(college => (
-                                <button
+                                <OatButton
                                     key={college.id}
                                     onClick={() => setConfig(prev => ({ ...prev, college: college.name }))}
                                 className={`rounded-[18px] border px-3 py-3 text-xs font-semibold transition ${config.college === college.name
@@ -196,7 +195,7 @@ export function InterviewSetup({
                                         }`}
                                 >
                                     {college.short}
-                                </button>
+                                </OatButton>
                             ))}
                         </div>
                     </div>
@@ -208,7 +207,7 @@ export function InterviewSetup({
                         </label>
                         <div className="flex flex-col gap-2">
                             {interviewTypes.map(type => (
-                                <button
+                                <OatButton
                                     key={type.id}
                                     onClick={() => setConfig(prev => ({ ...prev, interviewType: type.id }))}
                                 className={`flex items-center gap-3 rounded-[18px] border px-4 py-4 text-left transition ${config.interviewType === type.id
@@ -221,7 +220,7 @@ export function InterviewSetup({
                                         <div className="text-sm font-semibold text-text">{type.name}</div>
                                         <div className="text-xs text-on-surface-variant">{type.desc}</div>
                                     </div>
-                                </button>
+                                </OatButton>
                             ))}
                         </div>
                     </div>
@@ -233,7 +232,7 @@ export function InterviewSetup({
                         </label>
                         <div className="flex gap-2">
                             {durations.map(d => (
-                                <button
+                                <OatButton
                                     key={d.value}
                                     onClick={() => setConfig(prev => ({ ...prev, duration: d.value }))}
                                 className={`flex-1 rounded-[18px] border px-3 py-3 text-center transition ${config.duration === d.value
@@ -243,14 +242,14 @@ export function InterviewSetup({
                                 >
                                     <div className="text-sm font-semibold text-text">{d.label}</div>
                                     <div className="text-[10px] text-on-surface-variant">{d.desc}</div>
-                                </button>
+                                </OatButton>
                             ))}
                         </div>
                     </div>
-                </div>
+                </OatCard>
 
                 {/* Right Panel - Profile */}
-                <div className="refined-card flex flex-col gap-4 p-6">
+                <OatCard className="refined-card flex flex-col gap-4">
                     <div>
                         <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                             👤 Your Profile
@@ -264,7 +263,7 @@ export function InterviewSetup({
                         <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Name *
                         </label>
-                        <input
+                        <OatInput
                             type="text"
                             value={config.profile.name}
                             onChange={(e) => updateProfile('name', e.target.value)}
@@ -277,7 +276,7 @@ export function InterviewSetup({
                         <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Work Experience
                         </label>
-                        <input
+                        <OatInput
                             type="text"
                             value={config.profile.workExperience}
                             onChange={(e) => updateProfile('workExperience', e.target.value)}
@@ -290,7 +289,7 @@ export function InterviewSetup({
                         <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Education Background
                         </label>
-                        <input
+                        <OatInput
                             type="text"
                             value={config.profile.education}
                             onChange={(e) => updateProfile('education', e.target.value)}
@@ -303,7 +302,7 @@ export function InterviewSetup({
                         <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Hobbies / Interests
                         </label>
-                        <input
+                        <OatInput
                             type="text"
                             value={config.profile.hobbies}
                             onChange={(e) => updateProfile('hobbies', e.target.value)}
@@ -316,18 +315,18 @@ export function InterviewSetup({
                         <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
                             Why MBA?
                         </label>
-                        <textarea
+                        <OatTextarea
                             value={config.profile.whyMba}
                             onChange={(e) => updateProfile('whyMba', e.target.value)}
                             placeholder="Brief reason for pursuing MBA..."
                             className="textarea"
                         />
                     </div>
-                </div>
+                </OatCard>
             </div>
 
             {/* Start Button */}
-                <div className="refined-card px-6 py-5">
+            <OatCard className="refined-card">
                 <div className="flex items-center justify-between gap-4">
                         <div className="text-sm text-on-surface-variant">
                             {config.college ? (
@@ -341,10 +340,10 @@ export function InterviewSetup({
                         )}
                     </div>
 
-                    <button
+                    <OatButton
                         onClick={onStartInterview}
                         disabled={!isProfileComplete || isLoading || (config.interviewMode === 'live' && (!liveStatus?.isReady || Boolean(liveStatus?.error)))}
-                        className="refined-button-primary px-8 py-3 text-base"
+                        className="px-8 py-3 text-base"
                     >
                         {isLoading ? (
                             <span className="flex items-center gap-2">
@@ -359,9 +358,9 @@ export function InterviewSetup({
                         ) : (
                             <span>🎬 Start Interview</span>
                         )}
-                    </button>
+                    </OatButton>
                 </div>
-            </div>
+            </OatCard>
 
             <InterviewArchiveBrowser
                 sessions={archiveSessions}

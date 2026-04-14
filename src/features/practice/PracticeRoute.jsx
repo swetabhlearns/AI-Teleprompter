@@ -5,6 +5,7 @@ import { useSession } from '../../contexts/SessionContext';
 import { usePracticeStore } from '../../stores/practiceStore';
 import { useScriptStore } from '../../stores/scriptStore';
 import Teleprompter from '../../components/Teleprompter';
+import { OatButton } from '../../components/ui/OatComponents';
 
 export function PracticeRoute() {
   const navigate = useNavigate();
@@ -84,9 +85,9 @@ export function PracticeRoute() {
           <h3>Focus on speech, timing, and clarity</h3>
         </div>
 
-        <button onClick={handleCancelPractice} className="btn btn-secondary practice-exit-button">
+        <OatButton onClick={handleCancelPractice} variant="secondary" outline className="practice-exit-button">
           Exit Practice
-        </button>
+        </OatButton>
       </div>
 
       <div className="practice-fullscreen-stage">
@@ -111,13 +112,13 @@ export function PracticeRoute() {
       <div className="practice-bottom-dock glass-strong">
         <div className="practice-dock-group">
           <span className="practice-dock-label">Speed</span>
-          <button
+          <OatButton
             type="button"
             className="teleprompter-control-button"
             onClick={() => setPracticeSpeed((prev) => Math.max(5, prev - 10))}
           >
             −
-          </button>
+          </OatButton>
           <div className="practice-dock-speed">
             <div className="teleprompter-speed-track">
               <div
@@ -127,66 +128,70 @@ export function PracticeRoute() {
             </div>
             <span>{practiceSpeed}%</span>
           </div>
-          <button
+          <OatButton
             type="button"
             className="teleprompter-control-button"
             onClick={() => setPracticeSpeed((prev) => Math.min(100, prev + 10))}
           >
             +
-          </button>
-          <button
+          </OatButton>
+          <OatButton
             type="button"
             className={`teleprompter-pause-button ${practicePaused ? 'paused' : 'running'}`}
             onClick={() => setPracticePaused(!practicePaused)}
             disabled={!isPracticing}
           >
             {practicePaused ? '▶' : '⏸'}
-          </button>
+          </OatButton>
         </div>
 
         <div className="practice-dock-group practice-dock-center">
           {isPracticing ? (
-            <button
+            <OatButton
               onClick={handleStopPractice}
-              className="btn btn-danger practice-record-button"
+              variant="danger"
+              className="practice-record-button"
             >
               ⏹ Stop
-            </button>
+            </OatButton>
           ) : session.hasRecording ? (
             <>
-              <button
+              <OatButton
                 onClick={handleStartPracticeRecording}
                 disabled={!script}
-                className="btn btn-success practice-record-button"
+                className="practice-record-button"
               >
                 ▶ Record
-              </button>
-              <button
+              </OatButton>
+              <OatButton
                 onClick={handleDiscardPractice}
-                className="btn btn-secondary practice-record-button"
+                variant="secondary"
+                outline
+                className="practice-record-button"
               >
                 ✕ Discard
-              </button>
+              </OatButton>
             </>
           ) : (
-            <button
+            <OatButton
               onClick={handleStartPracticeRecording}
               disabled={!script}
-              className="btn btn-success practice-record-button"
+              className="practice-record-button"
             >
               ▶ Record
-            </button>
+            </OatButton>
           )}
         </div>
 
         <div className="practice-dock-group practice-dock-right">
-          <button
+          <OatButton
             type="button"
-            className="btn btn-secondary"
+            variant="secondary"
+            outline
             onClick={handleResetPracticeScroll}
           >
             ↺ Reset
-          </button>
+          </OatButton>
           {isPracticing && (
             <div className="practice-live-pill">
               <span className={isSpeaking ? 'text-emerald-400' : 'text-white/60'}>

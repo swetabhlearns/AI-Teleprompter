@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDeliveryScript } from '../utils/formatters';
+import { OatButton } from './ui/OatComponents';
 
 const CANONICAL_ROADMAP_SECTIONS = ['Hook', 'Core Narrative', 'Call to Action', 'Finish'];
 
@@ -380,9 +381,9 @@ export function Teleprompter({
           {isActive && (
             <div className={controlsClassName}>
               <span className="teleprompter-speed-label">Speed</span>
-              <button onClick={handleSpeedDown} className="teleprompter-control-button" type="button">
+              <OatButton onClick={handleSpeedDown} className="teleprompter-control-button" type="button" variant="secondary" outline>
                 −
-              </button>
+              </OatButton>
               <div className="teleprompter-speed-meter">
                 <div className="teleprompter-speed-track">
                   <div
@@ -392,19 +393,21 @@ export function Teleprompter({
                 </div>
                 <span>{resolvedSpeed}%</span>
               </div>
-              <button onClick={handleSpeedUp} className="teleprompter-control-button" type="button">
+              <OatButton onClick={handleSpeedUp} className="teleprompter-control-button" type="button" variant="secondary" outline>
                 +
-              </button>
-              <button
+              </OatButton>
+              <OatButton
                 onClick={handleTogglePause}
                 className={`teleprompter-pause-button ${isPaused ? 'paused' : 'running'}`}
                 type="button"
+                variant="secondary"
+                outline
               >
                 {isPaused ? '▶' : '⏸'}
-              </button>
-              <button onClick={handleReset} className="teleprompter-control-button" type="button">
+              </OatButton>
+              <OatButton onClick={handleReset} className="teleprompter-control-button" type="button" variant="secondary" outline>
                 ↺
-              </button>
+              </OatButton>
             </div>
           )}
 

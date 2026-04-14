@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { INTERVIEW_STATES } from '../hooks/useInterview';
+import { OatButton, OatCard } from './ui/OatComponents';
 
 /**
  * Interview Session Component
@@ -193,7 +194,7 @@ export function InterviewSession({
 
     return (
         <div className="flex h-full flex-col gap-5 overflow-auto text-text">
-            <div className="refined-card flex flex-1 flex-col gap-5 overflow-auto p-6">
+            <OatCard className="refined-card flex flex-1 flex-col gap-5 overflow-auto">
                     {/* Progress Bar */}
                     <div className="mb-4 flex items-center gap-3">
                         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-container-high">
@@ -315,9 +316,8 @@ export function InterviewSession({
                             </div>
                         )}
                     </div>
-                </div>
-            {/* Controls */}
-            <div className="refined-card px-6 py-5">
+	            {/* Controls */}
+            <div className="refined-card">
                 <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         {/* Tips */}
@@ -330,7 +330,7 @@ export function InterviewSession({
 
                     <div className="flex gap-3">
                         {/* Skip Button */}
-                        <button
+                        <OatButton
                             onClick={() => {
                                 if (window.posthog) window.posthog.capture('interview_question_skipped');
                                 void onTurnTranscriptReady?.({
@@ -361,39 +361,43 @@ export function InterviewSession({
                                 skipQuestion();
                             }}
                             disabled={state === INTERVIEW_STATES.EVALUATING || isProcessing || isGeneratingAudio}
-                            className="refined-button-secondary"
+                            variant="secondary"
+                            outline
                         >
                             {isGeneratingAudio ? '⏳ Wait...' : '⏭️ Skip'}
-                        </button>
+                        </OatButton>
 
                         {/* Main Action Button */}
                         {state === INTERVIEW_STATES.LISTENING && !isRecording ? (
-                            <button
+                            <OatButton
                                 onClick={handleStartAnswer}
-                                className="refined-button-primary px-8 py-3"
+                                className="px-8 py-3"
                             >
                                 {liveStatus?.mode === 'live' ? '🎬 Start Interview' : '🎤 Start Speaking'}
-                            </button>
+                            </OatButton>
                         ) : state === INTERVIEW_STATES.LISTENING && isRecording ? (
-                        <button
-                            onClick={handleStopAnswer}
-                                className="refined-button-danger px-8 py-3"
+                            <OatButton
+                                onClick={handleStopAnswer}
+                                variant="danger"
+                                className="px-8 py-3"
                             >
                                 ✓ Done Answering
-                            </button>
+                            </OatButton>
                         ) : null}
 
                         {/* End Interview */}
-                        <button
+                        <OatButton
                             onClick={endInterview}
                             disabled={isGeneratingAudio}
-                            className="refined-button-secondary"
+                            variant="secondary"
+                            outline
                         >
                             End Interview
-                        </button>
+                        </OatButton>
                     </div>
                 </div>
             </div>
+            </OatCard>
         </div>
     );
 }

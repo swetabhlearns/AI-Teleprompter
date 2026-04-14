@@ -1,3 +1,5 @@
+import { OatButton, OatCard } from './ui/OatComponents';
+
 function formatArchiveDate(timestamp) {
     if (!timestamp) return 'Saved locally';
 
@@ -20,7 +22,7 @@ export function InterviewArchiveBrowser({
     onDelete
 }) {
     return (
-        <div className="refined-card mt-5 p-6">
+    <OatCard className="refined-card mt-5">
             <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                     <h3 className="font-display text-lg font-semibold text-text">Recent Interviews</h3>
@@ -77,35 +79,39 @@ export function InterviewArchiveBrowser({
                             </div>
 
                             <div className="mt-4 flex flex-wrap gap-2">
-                                <button
+                                <OatButton
                                     type="button"
                                     onClick={() => onReuse?.(session.id)}
-                                    className="refined-button-primary px-4 py-2 text-sm"
+                                    className="px-4 py-2 text-sm"
                                 >
                                     Reuse Setup
-                                </button>
-                                <button
+                                </OatButton>
+                                <OatButton
                                     type="button"
                                     onClick={() => onExport?.(session.id)}
-                                    className="refined-button-secondary px-4 py-2 text-sm"
+                                    variant="secondary"
+                                    outline
+                                    className="px-4 py-2 text-sm"
                                 >
                                     Export
-                                </button>
+                                </OatButton>
                                 {onDelete && (
-                                    <button
+                                    <OatButton
                                         type="button"
                                         onClick={() => onDelete?.(session.id)}
-                                        className="refined-button-secondary px-4 py-2 text-sm"
+                                        variant="secondary"
+                                        outline
+                                        className="px-4 py-2 text-sm"
                                     >
                                         Delete
-                                    </button>
+                                    </OatButton>
                                 )}
                             </div>
                         </div>
                     ))}
                 </div>
             )}
-        </div>
+        </OatCard>
     );
 }
 

@@ -545,6 +545,105 @@ Respond in JSON format:
         }
     }, []);
 
+    const generateExtemporeCoachSuggestion = useCallback(async ({
+        topic = '',
+        transcriptText = '',
+        pauseStats = {},
+        fillerStats = {},
+        currentState = '',
+        issueCounts = {}
+    } = {}) => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const prompt = `You are coaching a beginner who struggles to continue speaking.
+
+Topic: ${topic || 'unknown'}
+Current state: ${currentState || 'unknown'}
+Transcript excerpt: ${transcriptText ? transcriptText.slice(0, 800) : 'none'}
+Pause stats: ${JSON.stringify(pauseStats)}
+Filler stats: ${JSON.stringify(fillerStats)}
+Issue counts: ${JSON.stringify(issueCounts)}
+
+Return one short recovery recommendation for the next session.
+The recommendation must be a single practical drill sentence.
+Also choose one prompt type from:
+- start_here
+- bridge
+- return_to_point
+- close_this_thought
+- reset
+
+Respond in JSON format:
+{
+  "promptType": "bridge",
+  "title": "Bridge",
+  "message": "Use a bridge phrase and continue.",
+  "starter": "What I mean is...",
+  "example": "That connects because...",
+  "recommendedDrill": "Practice restarting with a bridge phrase after each pause.",
+  "confidence": 0.82
+}`;
+
+            const completion = await groq.chat.completions.create({
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a calm speech coach. Be concrete, brief, and beginner-friendly.'
+                    },
+                    {
+                        role: 'user',
+                        content: prompt
+                    }
+                ],
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0.3,
+                max_tokens: 500
+            });
+
+            const response = completion.choices[0]?.message?.content || '';
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                return {
+                    promptType: String(parsed.promptType || 'bridge'),
+                    title: String(parsed.title || 'Bridge'),
+                    message: String(parsed.message || 'Use a bridge phrase and continue.'),
+                    starter: String(parsed.starter || 'What I mean is...'),
+                    example: String(parsed.example || 'That connects because...'),
+                    recommendedDrill: String(parsed.recommendedDrill || 'Practice restarting with a bridge phrase after each pause.'),
+                    confidence: Number.isFinite(Number(parsed.confidence)) ? Number(parsed.confidence) : 0.75
+                };
+            }
+
+            return {
+                promptType: 'bridge',
+                title: 'Bridge',
+                message: 'Use a bridge phrase and continue.',
+                starter: 'What I mean is...',
+                example: 'That connects because...',
+                recommendedDrill: 'Practice restarting with a bridge phrase after each pause.',
+                confidence: 0.5
+            };
+        } catch (err) {
+            console.error('Extempore coaching suggestion error:', err);
+            setError(err.message || 'Failed to generate coaching suggestion');
+            return {
+                promptType: 'bridge',
+                title: 'Bridge',
+                message: 'Use a bridge phrase and continue.',
+                starter: 'What I mean is...',
+                example: 'That connects because...',
+                recommendedDrill: 'Practice restarting with a bridge phrase after each pause.',
+                confidence: 0.4
+            };
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
     return {
         generateScript,
         refineScript,
@@ -552,6 +651,7 @@ Respond in JSON format:
         generateInterviewQuestions,
         evaluateAnswer,
         generateExtemporeTopics,
+        generateExtemporeCoachSuggestion,
         isLoading,
         error
     };

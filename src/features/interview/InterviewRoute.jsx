@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { usePostHog } from 'posthog-js/react';
 import InterviewSetup from '../../components/InterviewSetup';
 import InterviewSession from '../../components/InterviewSession';
+import { OatButton, OatCard } from '../../components/ui/OatComponents';
 import { useRecorder } from '../../hooks/useRecorder';
 import { useGroq } from '../../hooks/useGroq';
 import { useInterview, INTERVIEW_STATES } from '../../hooks/useInterview';
@@ -48,13 +49,6 @@ export function InterviewRoute() {
   const geminiLiveMessageCount = geminiLiveDiagnostics?.messagesReceived || 0;
   const acknowledgeGeminiRecovery = geminiLive.acknowledgeRecovery;
   const geminiLiveError = geminiLive.error;
-  const isInterviewBusy = [
-    INTERVIEW_STATES.ASKING,
-    INTERVIEW_STATES.LISTENING,
-    INTERVIEW_STATES.PROCESSING,
-    INTERVIEW_STATES.EVALUATING
-  ].includes(interviewState);
-
   useEffect(() => {
     if (interviewMode !== 'live') {
       liveCaptureActiveRef.current = false;
@@ -495,41 +489,41 @@ export function InterviewRoute() {
 
       {interview.state === INTERVIEW_STATES.COMPLETE && (
         <div className="flex flex-1 items-center justify-center">
-          <div className="refined-card max-w-2xl p-8 text-center">
+          <OatCard className="refined-card max-w-2xl text-center">
             <div className="mb-3 text-5xl">✅</div>
             <h3 className="mb-2 text-2xl font-semibold text-text">Interview complete</h3>
             <p className="mb-6 text-sm text-on-surface-variant">
               Your session is finished. You can start a new interview or go back home.
             </p>
             <div className="flex justify-center gap-3">
-              <button onClick={handleInterviewRestart} className="refined-button-primary">
+              <OatButton onClick={handleInterviewRestart}>
                 Start Another
-              </button>
-              <button onClick={handleInterviewGoHome} className="refined-button-secondary">
+              </OatButton>
+              <OatButton onClick={handleInterviewGoHome} variant="secondary" outline>
                 Back to Home
-              </button>
+              </OatButton>
             </div>
-          </div>
+          </OatCard>
         </div>
       )}
 
       {interview.state === INTERVIEW_STATES.ERROR && (
         <div className="flex flex-1 items-center justify-center">
-          <div className="refined-card max-w-2xl p-8 text-center">
+          <OatCard className="refined-card max-w-2xl text-center">
             <div className="mb-3 text-5xl">⚠️</div>
             <h3 className="mb-2 text-2xl font-semibold text-text">Interview stopped</h3>
             <p className="mb-6 text-sm text-on-surface-variant">
               {interview.error || geminiLive.error || 'Gemini 3.1 Flash Live disconnected. Please retry the live interview.'}
             </p>
             <div className="flex justify-center gap-3">
-              <button onClick={handleInterviewRestart} className="refined-button-secondary">
+              <OatButton onClick={handleInterviewRestart} variant="secondary" outline>
                 Retry Setup
-              </button>
-              <button onClick={handleInterviewGoHome} className="refined-button-secondary">
+              </OatButton>
+              <OatButton onClick={handleInterviewGoHome} variant="secondary" outline>
                 Back to Home
-              </button>
+              </OatButton>
             </div>
-          </div>
+          </OatCard>
         </div>
       )}
     </div>
