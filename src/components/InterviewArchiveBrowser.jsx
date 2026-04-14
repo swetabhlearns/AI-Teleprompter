@@ -20,10 +20,10 @@ export function InterviewArchiveBrowser({
     onDelete
 }) {
     return (
-        <div className="glass-strong mt-5 p-6">
+        <div className="refined-card mt-5 p-6">
             <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                    <h3 className="text-lg font-semibold text-text">Recent Interviews</h3>
+                    <h3 className="font-display text-lg font-semibold text-text">Recent Interviews</h3>
                     <p className="text-xs text-on-surface-variant">
                         Stored locally in your browser. Sessions survive refreshes and can be exported as JSON.
                     </p>
@@ -34,13 +34,13 @@ export function InterviewArchiveBrowser({
             </div>
 
             {error && (
-                <div className="mb-4 rounded-sm border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+                <div className="mb-4 rounded-[18px] border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
                     {error}
                 </div>
             )}
 
             {sessions.length === 0 && !isLoading ? (
-                <div className="rounded-sm border border-dashed border-outline-variant bg-surface-container-low px-4 py-6 text-sm text-on-surface-variant">
+                <div className="rounded-[18px] border border-dashed border-outline-variant bg-surface-container-low px-4 py-6 text-sm text-on-surface-variant">
                     Finished interviews will appear here once you complete a session.
                 </div>
             ) : (
@@ -48,7 +48,7 @@ export function InterviewArchiveBrowser({
                     {sessions.slice(0, 8).map((session) => (
                         <div
                             key={session.id}
-                            className="rounded-sm border border-outline-variant bg-surface-container-low p-4"
+                            className="rounded-[18px] border border-outline-variant bg-surface-container-low p-4"
                         >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
@@ -56,10 +56,10 @@ export function InterviewArchiveBrowser({
                                         <h4 className="truncate text-sm font-semibold text-text">
                                             {session.title}
                                         </h4>
-                                        <span className="rounded-full border border-outline-variant bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] text-on-surface-variant">
+                                        <span className="refined-chip">
                                             {session.mode === 'live' ? 'Gemini 3.1 Flash Live' : 'Groq'}
                                         </span>
-                                        <span className="rounded-full border border-outline-variant bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] text-on-surface-variant">
+                                        <span className="refined-chip">
                                             {session.status}
                                         </span>
                                     </div>
@@ -80,14 +80,14 @@ export function InterviewArchiveBrowser({
                                 <button
                                     type="button"
                                     onClick={() => onReuse?.(session.id)}
-                                    className="btn btn-primary px-4 py-2 text-sm"
+                                    className="refined-button-primary px-4 py-2 text-sm"
                                 >
                                     Reuse Setup
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => onExport?.(session.id)}
-                                    className="btn btn-secondary px-4 py-2 text-sm"
+                                    className="refined-button-secondary px-4 py-2 text-sm"
                                 >
                                     Export
                                 </button>
@@ -95,7 +95,7 @@ export function InterviewArchiveBrowser({
                                     <button
                                         type="button"
                                         onClick={() => onDelete?.(session.id)}
-                                        className="btn btn-secondary px-4 py-2 text-sm"
+                                        className="refined-button-secondary px-4 py-2 text-sm"
                                     >
                                         Delete
                                     </button>

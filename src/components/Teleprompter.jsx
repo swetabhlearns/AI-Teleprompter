@@ -99,6 +99,8 @@ export function Teleprompter({
   isActive = false,
   isSpeaking = false,
   audioLevel = 0,
+  isPaused: controlledPaused,
+  onPauseChange,
   onSpeedChange,
   initialSpeed = 20,
   speed,
@@ -109,7 +111,7 @@ export function Teleprompter({
   showLiveIndicator = true
 }) {
   const [uncontrolledSpeed, setUncontrolledSpeed] = useState(initialSpeed);
-  const [isPaused, setIsPaused] = useState(false);
+  const [uncontrolledPaused, setUncontrolledPaused] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const contentRef = useRef(null);
@@ -120,6 +122,8 @@ export function Teleprompter({
   const resolvedPreferences = notationPreferences || DEFAULT_NOTATION_PREFERENCES;
   const parsedScript = useMemo(() => parseDeliveryScript(script), [script]);
   const resolvedSpeed = typeof speed === 'number' ? speed : uncontrolledSpeed;
+  const isPauseControlled = typeof controlledPaused === 'boolean';
+  const isPaused = typeof controlledPaused === 'boolean' ? controlledPaused : uncontrolledPaused;
   const canonicalSections = useMemo(() => {
     const sectionOrder = new Map(CANONICAL_ROADMAP_SECTIONS.map((title, index) => [title, index]));
 
@@ -139,7 +143,7 @@ export function Teleprompter({
   }, [onSpeedChange, resolvedSpeed, speed]);
 
   const handleSpeedDown = useCallback(() => {
-    const next = Math.max(10, resolvedSpeed - 10);
+    const next = Math.max(5, resolvedSpeed - 10);
     if (typeof speed === 'number') {
       onSpeedChange?.(next);
     } else {
@@ -147,9 +151,19 @@ export function Teleprompter({
     }
   }, [onSpeedChange, resolvedSpeed, speed]);
 
+  const setPause = useCallback((nextPaused) => {
+    if (isPauseControlled) {
+      onPauseChange?.(nextPaused);
+      return;
+    }
+
+    setUncontrolledPaused(nextPaused);
+    onPauseChange?.(nextPaused);
+  }, [isPauseControlled, onPauseChange]);
+
   const handleTogglePause = useCallback(() => {
-    setIsPaused((prev) => !prev);
-  }, []);
+    setPause(!isPaused);
+  }, [isPaused, setPause]);
 
   const handleReset = useCallback(() => {
     scrollPosRef.current = 0;
@@ -203,7 +217,7 @@ export function Teleprompter({
       const resetTimer = window.setTimeout(() => {
         setCountdown(0);
         setIsScrolling(false);
-        setIsPaused(false);
+        setPause(false);
       }, 0);
 
       return () => window.clearTimeout(resetTimer);
@@ -262,7 +276,7 @@ export function Teleprompter({
         if (scrollPosRef.current >= maxScroll && maxScroll > 0) {
           scrollPosRef.current = maxScroll;
           contentRef.current.scrollTop = maxScroll;
-          setIsPaused(true);
+          setPause(true);
           return;
         }
 
@@ -281,12 +295,12 @@ export function Teleprompter({
         animationRef.current = null;
       }
     };
-  }, [isActive, isPaused, isScrolling]);
+  }, [isActive, isPaused, isScrolling, setPause]);
 
   useEffect(() => {
     scrollPosRef.current = 0;
     const resetTimer = window.setTimeout(() => {
-      setIsPaused(false);
+      setPause(false);
       setIsScrolling(false);
       setCountdown(0);
 
@@ -296,7 +310,7 @@ export function Teleprompter({
     }, 0);
 
     return () => window.clearTimeout(resetTimer);
-  }, [script]);
+  }, [script, setPause]);
 
   if (!script) {
     return (

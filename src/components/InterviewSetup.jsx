@@ -75,10 +75,10 @@ export function InterviewSetup({
     return (
         <div className="flex h-full flex-col gap-6 overflow-auto text-text">
             {/* Header */}
-            <div className="glass-strong p-6">
+            <div className="refined-card p-6">
                 <div className="flex items-start justify-between gap-4">
                     <div>
-                        <h2 className="mb-2 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em] text-text">
+                        <h2 className="font-display mb-2 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em] text-text">
                             <span style={{ fontSize: '32px' }}>🎤</span>
                             Mock Interview Setup
                         </h2>
@@ -88,7 +88,7 @@ export function InterviewSetup({
                     </div>
 
                     {config.interviewMode === 'live' ? (
-                        <div className="flex items-center gap-2 rounded-sm border border-outline-variant bg-surface-container-low px-3 py-2 text-xs text-text">
+                        <div className="refined-chip flex items-center gap-2">
                             {liveStatus?.modelStatus === 'checking' ? (
                                 <>
                                     <div className="spinner h-3 w-3 border-2" />
@@ -117,7 +117,7 @@ export function InterviewSetup({
                             )}
                         </div>
                     ) : ttsStatus && (
-                        <div className="flex items-center gap-2 rounded-sm border border-outline-variant bg-surface-container-low px-3 py-2 text-xs text-text">
+                        <div className="refined-chip flex items-center gap-2">
                             {ttsStatus.isLoading ? (
                                 <>
                                     <div className="spinner h-3 w-3 border-2" />
@@ -138,11 +138,11 @@ export function InterviewSetup({
                     )}
                 </div>
                 {config.interviewMode === 'live' && liveStatus?.error && (
-                    <div className="mt-3 rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+                    <div className="mt-3 rounded-[18px] border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
                         {liveStatus.error}
                     </div>
                 )}
-                <div className="mt-4 rounded-sm border border-outline-variant bg-surface-container-low p-3">
+                <div className="mt-4 rounded-[22px] border border-outline-variant bg-surface-container-low p-3">
                     <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                         Interview Mode
                     </div>
@@ -155,7 +155,7 @@ export function InterviewSetup({
                                         setConfig(prev => ({ ...prev, interviewMode: mode.id }));
                                         onModeChange?.(mode.id);
                                     }}
-                                    className={`rounded-sm border px-3 py-3 text-left transition ${config.interviewMode === mode.id
+                                className={`rounded-[18px] border px-3 py-3 text-left transition ${config.interviewMode === mode.id
                                         ? 'border-primary-container bg-primary-container/10'
                                         : 'border-outline-variant bg-surface hover:bg-surface-container-low'
                                     }`}
@@ -163,7 +163,7 @@ export function InterviewSetup({
                                 <div className="flex items-center justify-between gap-2">
                                     <div className="text-sm font-semibold text-text">{mode.name}</div>
                                     {mode.badge && (
-                                        <span className="rounded-full border border-outline-variant bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.05em] text-on-surface-variant">
+                                        <span className="refined-chip">
                                             {mode.badge}
                                         </span>
                                     )}
@@ -179,7 +179,7 @@ export function InterviewSetup({
             {/* Main Content */}
             <div className="grid flex-1 grid-cols-1 gap-6 overflow-auto lg:grid-cols-2">
                 {/* Left Panel - College & Type */}
-                <div className="glass-strong flex flex-col gap-6 p-6">
+                <div className="refined-card flex flex-col gap-6 p-6">
                     {/* College Selection */}
                     <div>
                         <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
@@ -190,7 +190,7 @@ export function InterviewSetup({
                                 <button
                                     key={college.id}
                                     onClick={() => setConfig(prev => ({ ...prev, college: college.name }))}
-                                    className={`rounded-sm border px-3 py-3 text-xs font-semibold transition ${config.college === college.name
+                                className={`rounded-[18px] border px-3 py-3 text-xs font-semibold transition ${config.college === college.name
                                         ? 'border-primary-container bg-primary-container text-on-primary-container'
                                         : 'border-outline-variant bg-surface text-text hover:bg-surface-container-low'
                                         }`}
@@ -211,7 +211,7 @@ export function InterviewSetup({
                                 <button
                                     key={type.id}
                                     onClick={() => setConfig(prev => ({ ...prev, interviewType: type.id }))}
-                                    className={`flex items-center gap-3 rounded-sm border px-4 py-4 text-left transition ${config.interviewType === type.id
+                                className={`flex items-center gap-3 rounded-[18px] border px-4 py-4 text-left transition ${config.interviewType === type.id
                                         ? 'border-primary-container bg-surface-container-low'
                                         : 'border-outline-variant bg-surface hover:bg-surface-container-low'
                                         }`}
@@ -236,7 +236,7 @@ export function InterviewSetup({
                                 <button
                                     key={d.value}
                                     onClick={() => setConfig(prev => ({ ...prev, duration: d.value }))}
-                                    className={`flex-1 rounded-sm border px-3 py-3 text-center transition ${config.duration === d.value
+                                className={`flex-1 rounded-[18px] border px-3 py-3 text-center transition ${config.duration === d.value
                                         ? 'border-primary-container bg-surface-container-low text-text'
                                         : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-low'
                                         }`}
@@ -250,7 +250,7 @@ export function InterviewSetup({
                 </div>
 
                 {/* Right Panel - Profile */}
-                <div className="glass-strong flex flex-col gap-4 p-6">
+                <div className="refined-card flex flex-col gap-4 p-6">
                     <div>
                         <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
                             👤 Your Profile
@@ -327,7 +327,7 @@ export function InterviewSetup({
             </div>
 
             {/* Start Button */}
-            <div className="glass-strong px-6 py-5">
+                <div className="refined-card px-6 py-5">
                 <div className="flex items-center justify-between gap-4">
                         <div className="text-sm text-on-surface-variant">
                             {config.college ? (
@@ -344,7 +344,7 @@ export function InterviewSetup({
                     <button
                         onClick={onStartInterview}
                         disabled={!isProfileComplete || isLoading || (config.interviewMode === 'live' && (!liveStatus?.isReady || Boolean(liveStatus?.error)))}
-                        className="btn btn-success px-8 py-3 text-base"
+                        className="refined-button-primary px-8 py-3 text-base"
                     >
                         {isLoading ? (
                             <span className="flex items-center gap-2">

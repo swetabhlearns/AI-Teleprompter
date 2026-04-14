@@ -13,24 +13,28 @@ export function PracticeRoute() {
   const scriptPreferences = useScriptStore((state) => state.scriptPreferences);
   const { isRecording, isSpeaking, audioLevel, startRecording, stopRecording } = useRecorder();
   const isPracticing = usePracticeStore((state) => state.isPracticing);
+  const practicePaused = usePracticeStore((state) => state.practicePaused);
   const practiceSpeed = usePracticeStore((state) => state.practiceSpeed);
   const practiceSessionKey = usePracticeStore((state) => state.practiceSessionKey);
   const setIsPracticing = usePracticeStore((state) => state.setIsPracticing);
+  const setPracticePaused = usePracticeStore((state) => state.setPracticePaused);
   const setPracticeSpeed = usePracticeStore((state) => state.setPracticeSpeed);
   const bumpPracticeSessionKey = usePracticeStore((state) => state.bumpPracticeSessionKey);
 
   const handleStartPracticeRecording = useCallback(async () => {
     setIsPracticing(true);
+    setPracticePaused(false);
     try {
       await startRecording();
     } catch (err) {
       console.error('Practice recording failed to start:', err);
       setIsPracticing(false);
     }
-  }, [setIsPracticing, startRecording]);
+  }, [setIsPracticing, setPracticePaused, startRecording]);
 
   const handleStopPractice = useCallback(async () => {
     setIsPracticing(false);
+    setPracticePaused(false);
     try {
       const result = await stopRecording();
       const recordedBlob = result.blob || result;
@@ -47,27 +51,30 @@ export function PracticeRoute() {
       console.error('Stop recording failed:', err);
       return null;
     }
-  }, [session, setIsPracticing, stopRecording]);
+  }, [session, setIsPracticing, setPracticePaused, stopRecording]);
 
   const handleResetPracticeScroll = useCallback(() => {
     setPracticeSpeed(20);
+    setPracticePaused(false);
     bumpPracticeSessionKey();
-  }, [bumpPracticeSessionKey, setPracticeSpeed]);
+  }, [bumpPracticeSessionKey, setPracticePaused, setPracticeSpeed]);
 
   const handleDiscardPractice = useCallback(() => {
     setIsPracticing(false);
+    setPracticePaused(false);
     session.resetSession();
     setPracticeSpeed(20);
     bumpPracticeSessionKey();
-  }, [bumpPracticeSessionKey, session, setIsPracticing, setPracticeSpeed]);
+  }, [bumpPracticeSessionKey, session, setIsPracticing, setPracticePaused, setPracticeSpeed]);
 
   const handleCancelPractice = useCallback(async () => {
     setIsPracticing(false);
+    setPracticePaused(false);
     await stopRecording();
     session.resetSession();
     setPracticeSpeed(20);
     void navigate({ to: '/script' });
-  }, [navigate, session, setIsPracticing, setPracticeSpeed, stopRecording]);
+  }, [navigate, session, setIsPracticing, setPracticePaused, setPracticeSpeed, stopRecording]);
 
   return (
     <div className="practice-fullscreen">
@@ -90,6 +97,8 @@ export function PracticeRoute() {
           isSpeaking={isSpeaking}
           audioLevel={audioLevel}
           notationPreferences={scriptPreferences}
+          isPaused={practicePaused}
+          onPauseChange={setPracticePaused}
           speed={practiceSpeed}
           onSpeedChange={setPracticeSpeed}
           variant="overlay"
@@ -105,7 +114,7 @@ export function PracticeRoute() {
           <button
             type="button"
             className="teleprompter-control-button"
-            onClick={() => setPracticeSpeed((prev) => Math.max(10, prev - 10))}
+            onClick={() => setPracticeSpeed((prev) => Math.max(5, prev - 10))}
           >
             −
           </button>
@@ -124,6 +133,14 @@ export function PracticeRoute() {
             onClick={() => setPracticeSpeed((prev) => Math.min(100, prev + 10))}
           >
             +
+          </button>
+          <button
+            type="button"
+            className={`teleprompter-pause-button ${practicePaused ? 'paused' : 'running'}`}
+            onClick={() => setPracticePaused(!practicePaused)}
+            disabled={!isPracticing}
+          >
+            {practicePaused ? '▶' : '⏸'}
           </button>
         </div>
 
@@ -190,4 +207,3 @@ export function PracticeRoute() {
 }
 
 export default PracticeRoute;
-

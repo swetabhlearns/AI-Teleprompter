@@ -480,11 +480,13 @@ Topics should be:
 - Open-ended conversational questions
 - Relevant to modern context
 - Easy to speak on for 2-3 minutes
+- Keep each topic concise: 6-10 words max
+- Use simple, readable language with no long clauses
 - Mix of serious and interesting
 
 Examples:
-- "Is remote work the future of employment?"
-- "Should social media usage be regulated for minors?"
+- "Should remote work stay permanent?"
+- "Should social media be limited for teens?"
 - "Is India ready for electric vehicles?"
 
 Respond in JSON format:
@@ -523,20 +525,20 @@ Respond in JSON format:
 
             // Fallback topics if parsing fails
             return [
-                "Is artificial intelligence a threat to creativity?",
-                "The impact of social media on mental health",
-                "Sustainable living: Fad or necessity?",
-                "The future of education in a digital world"
+                "Should AI replace creative work?",
+                "Should social media have stricter rules?",
+                "Is sustainable living worth the cost?",
+                "Will digital education replace classrooms?"
             ];
 
         } catch (err) {
             console.error('Topic generation error:', err);
             setError(err.message || 'Failed to generate topics');
             return [
-                "Is artificial intelligence a threat to creativity?",
-                "The impact of social media on mental health",
-                "Sustainable living: Fad or necessity?",
-                "The future of education in a digital world"
+                "Should AI replace creative work?",
+                "Should social media have stricter rules?",
+                "Is sustainable living worth the cost?",
+                "Will digital education replace classrooms?"
             ];
         } finally {
             setIsLoading(false);

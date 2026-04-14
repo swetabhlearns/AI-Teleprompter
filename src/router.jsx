@@ -1,7 +1,7 @@
 import { Navigate, createRoute, createRootRoute, createRouter } from '@tanstack/react-router';
 import { AppShell } from './app/AppShell';
 import ScriptRoute from './features/script/ScriptRoute';
-import ExtemporeRoute from './features/extempore/ExtemporeRoute';
+import { ExtemporeLiveRoute, ExtemporeSelectionRoute } from './features/extempore/ExtemporeRoute';
 import InterviewRoute from './features/interview/InterviewRoute';
 import PracticeRoute from './features/practice/PracticeRoute';
 
@@ -24,7 +24,13 @@ const scriptRoute = createRoute({
 const extemporeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: 'extempore',
-  component: ExtemporeRoute
+  component: ExtemporeSelectionRoute
+});
+
+const extemporeLiveRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'extempore/live',
+  component: ExtemporeLiveRoute
 });
 
 const interviewRoute = createRoute({
@@ -43,6 +49,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   scriptRoute,
   extemporeRoute,
+  extemporeLiveRoute,
   interviewRoute,
   practiceRoute
 ]);
@@ -51,4 +58,3 @@ export const router = createRouter({
   routeTree,
   defaultPreload: 'intent'
 });
-

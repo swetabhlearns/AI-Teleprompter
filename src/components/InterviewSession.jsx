@@ -193,11 +193,11 @@ export function InterviewSession({
 
     return (
         <div className="flex h-full flex-col gap-5 overflow-auto text-text">
-            <div className="glass-strong flex flex-1 flex-col gap-5 overflow-auto p-6">
+            <div className="refined-card flex flex-1 flex-col gap-5 overflow-auto p-6">
                     {/* Progress Bar */}
                     <div className="mb-4 flex items-center gap-3">
-                        <div className="h-1 flex-1 overflow-hidden rounded-sm bg-surface-container-high">
-                            <div className="h-full bg-primary-container transition-all duration-500" style={{ width: `${progress}%` }} />
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-container-high">
+                            <div className="h-full rounded-full bg-primary-container transition-all duration-500" style={{ width: `${progress}%` }} />
                         </div>
                         <span className="text-sm font-semibold text-on-surface-variant">
                             {currentQuestionIndex + 1} / {questions.length}
@@ -205,7 +205,7 @@ export function InterviewSession({
                     </div>
 
                     {liveStatus?.mode === 'live' && (
-                        <div className="flex items-center justify-between gap-3 rounded-sm border border-outline-variant bg-surface-container-low px-4 py-3 text-sm">
+                        <div className="flex items-center justify-between gap-3 rounded-[18px] border border-outline-variant bg-surface-container-low px-4 py-3 text-sm">
                             <div className="flex items-center gap-2 text-text">
                                 <div className={`size-2.5 rounded-full ${liveStatus.isConnected ? 'bg-success' : liveStatus.isConnecting ? 'bg-warning animate-pulse' : 'bg-danger'}`} />
                                 <span>
@@ -224,7 +224,7 @@ export function InterviewSession({
                     )}
 
                     {liveStatus?.mode === 'live' && liveStatus?.diagnostics && (
-                        <div className="rounded-sm border border-outline-variant bg-surface-container-low px-4 py-3 text-xs text-on-surface-variant">
+                        <div className="rounded-[18px] border border-outline-variant bg-surface-container-low px-4 py-3 text-xs text-on-surface-variant">
                             <div className="mb-1 font-medium uppercase tracking-[0.05em] text-text">Gemini diagnostics</div>
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
                                 <span>Event: {liveStatus.diagnostics.lastEvent || 'idle'}</span>
@@ -243,7 +243,7 @@ export function InterviewSession({
                         </div>
                     )}
 
-                    <div className="rounded-sm border border-outline-variant bg-surface-container-low p-5">
+                    <div className="rounded-[18px] border border-outline-variant bg-surface-container-low p-5">
                         {isGeneratingAudio && (
                             <div className="mb-4 flex items-center gap-3 text-secondary">
                                 <div className="spinner h-4 w-4 border-2" />
@@ -253,7 +253,7 @@ export function InterviewSession({
 
                         {currentQuestion && !(liveStatus?.mode === 'live' && currentQuestion?.isIntroPrompt) && (
                             <div>
-                                <div className="mb-2 inline-flex rounded-sm border border-outline-variant bg-surface px-3 py-1 text-[11px] font-medium uppercase tracking-[0.05em] text-on-surface-variant">
+                                <div className="mb-2 inline-flex rounded-full border border-outline-variant bg-surface px-3 py-1 text-[11px] font-medium uppercase tracking-[0.05em] text-on-surface-variant">
                                     {currentQuestion.category}
                                 </div>
                                 <h2 className="text-[22px] font-semibold leading-[1.5] text-text">
@@ -261,7 +261,7 @@ export function InterviewSession({
                                     {currentQuestion.text}
                                 </h2>
                                 {liveStatus?.mode === 'live' && liveStatus.lastAssistantText && (
-                                    <div className="mt-3 rounded-sm border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface-variant">
+                                    <div className="mt-3 rounded-[18px] border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface-variant">
                                         <div className="mb-1 text-[11px] uppercase tracking-[0.05em]">Live response</div>
                                         {liveStatus.lastAssistantText}
                                     </div>
@@ -270,7 +270,7 @@ export function InterviewSession({
                         )}
 
                         {liveStatus?.mode === 'live' && currentQuestion?.isIntroPrompt && (
-                            <div className="rounded-sm border border-dashed border-outline-variant bg-surface px-4 py-4 text-sm text-on-surface-variant">
+                            <div className="rounded-[18px] border border-dashed border-outline-variant bg-surface px-4 py-4 text-sm text-on-surface-variant">
                                 <div className="mb-1 text-[11px] uppercase tracking-[0.05em] text-text">Ready when you are</div>
                                 <p>Press Start Interview, then say hello or introduce yourself. The interviewer will begin after your opening words.</p>
                             </div>
@@ -317,7 +317,7 @@ export function InterviewSession({
                     </div>
                 </div>
             {/* Controls */}
-            <div className="glass-strong px-6 py-5">
+            <div className="refined-card px-6 py-5">
                 <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         {/* Tips */}
@@ -361,7 +361,7 @@ export function InterviewSession({
                                 skipQuestion();
                             }}
                             disabled={state === INTERVIEW_STATES.EVALUATING || isProcessing || isGeneratingAudio}
-                            className="btn btn-secondary"
+                            className="refined-button-secondary"
                         >
                             {isGeneratingAudio ? '⏳ Wait...' : '⏭️ Skip'}
                         </button>
@@ -370,14 +370,14 @@ export function InterviewSession({
                         {state === INTERVIEW_STATES.LISTENING && !isRecording ? (
                             <button
                                 onClick={handleStartAnswer}
-                                className="btn btn-success px-8 py-3"
+                                className="refined-button-primary px-8 py-3"
                             >
                                 {liveStatus?.mode === 'live' ? '🎬 Start Interview' : '🎤 Start Speaking'}
                             </button>
                         ) : state === INTERVIEW_STATES.LISTENING && isRecording ? (
-                            <button
-                                onClick={handleStopAnswer}
-                                className="btn btn-danger px-8 py-3"
+                        <button
+                            onClick={handleStopAnswer}
+                                className="refined-button-danger px-8 py-3"
                             >
                                 ✓ Done Answering
                             </button>
@@ -387,7 +387,7 @@ export function InterviewSession({
                         <button
                             onClick={endInterview}
                             disabled={isGeneratingAudio}
-                            className="btn btn-secondary"
+                            className="refined-button-secondary"
                         >
                             End Interview
                         </button>

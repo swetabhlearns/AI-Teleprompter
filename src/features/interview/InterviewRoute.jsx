@@ -495,17 +495,17 @@ export function InterviewRoute() {
 
       {interview.state === INTERVIEW_STATES.COMPLETE && (
         <div className="flex flex-1 items-center justify-center">
-          <div className="glass-strong max-w-2xl rounded-2xl p-8 text-center">
+          <div className="refined-card max-w-2xl p-8 text-center">
             <div className="mb-3 text-5xl">✅</div>
             <h3 className="mb-2 text-2xl font-semibold text-text">Interview complete</h3>
             <p className="mb-6 text-sm text-on-surface-variant">
               Your session is finished. You can start a new interview or go back home.
             </p>
             <div className="flex justify-center gap-3">
-              <button onClick={handleInterviewRestart} className="btn btn-primary">
+              <button onClick={handleInterviewRestart} className="refined-button-primary">
                 Start Another
               </button>
-              <button onClick={handleInterviewGoHome} className="btn btn-secondary">
+              <button onClick={handleInterviewGoHome} className="refined-button-secondary">
                 Back to Home
               </button>
             </div>
@@ -515,17 +515,17 @@ export function InterviewRoute() {
 
       {interview.state === INTERVIEW_STATES.ERROR && (
         <div className="flex flex-1 items-center justify-center">
-          <div className="glass-strong max-w-2xl rounded-2xl p-8 text-center">
+          <div className="refined-card max-w-2xl p-8 text-center">
             <div className="mb-3 text-5xl">⚠️</div>
             <h3 className="mb-2 text-2xl font-semibold text-text">Interview stopped</h3>
             <p className="mb-6 text-sm text-on-surface-variant">
               {interview.error || geminiLive.error || 'Gemini 3.1 Flash Live disconnected. Please retry the live interview.'}
             </p>
             <div className="flex justify-center gap-3">
-              <button onClick={handleInterviewRestart} className="btn btn-secondary">
+              <button onClick={handleInterviewRestart} className="refined-button-secondary">
                 Retry Setup
               </button>
-              <button onClick={handleInterviewGoHome} className="btn btn-secondary">
+              <button onClick={handleInterviewGoHome} className="refined-button-secondary">
                 Back to Home
               </button>
             </div>
