@@ -67,6 +67,17 @@ const HELP_STYLE_LABELS = {
   [EXTEMPORE_COACH_HELP_STYLES.BOTH]: 'Both'
 };
 
+const TOPIC_CATEGORIES = [
+  { label: 'Tech', category: 'technology', hint: 'AI, apps, internet, work' },
+  { label: 'India', category: 'india', hint: 'current affairs, society, future' },
+  { label: 'Philosophy', category: 'philosophy', hint: 'values, life, choices, truth' },
+  { label: 'Business', category: 'business', hint: 'work, careers, money, growth' },
+  { label: 'Education', category: 'education', hint: 'learning, exams, skills, schools' },
+  { label: 'Environment', category: 'environment', hint: 'climate, cities, habits, change' },
+  { label: 'Media', category: 'media', hint: 'news, creators, attention, trust' },
+  { label: 'Society', category: 'social', hint: 'family, youth, culture, behavior' }
+];
+
 function MicIcon({ className = '' }) {
   return <Microphone className={className} size={16} weight="fill" aria-hidden="true" />;
 }
@@ -535,6 +546,7 @@ function ExtemporePractice({
   const [phase, setPhase] = useState(mode === 'live' ? EXT_STATES.PRACTICE : EXT_STATES.TOPIC_SELECTION);
   const [topics, setTopics] = useState([]);
   const [currentTopic, setCurrentTopic] = useState(selectedTopic);
+  const [selectedCategory, setSelectedCategory] = useState(TOPIC_CATEGORIES[0].category);
   const [isGeneratingTopics, setIsGeneratingTopics] = useState(true);
   const [selectorPhase, setSelectorPhase] = useState(SELECTION_PHASES.IDLE);
   const [rollingDeck, setRollingDeck] = useState([]);
@@ -546,7 +558,6 @@ function ExtemporePractice({
   const spinTimerRef = useRef(null);
   const settleTimerRef = useRef(null);
   const transitionTimerRef = useRef(null);
-  const didInitTopicsRef = useRef(false);
 
   const { speak, stop: stopTTS } = useSarvamTTS();
   const transcriptCapture = useExtemporeSpeechTranscript({
@@ -605,11 +616,11 @@ function ExtemporePractice({
     };
   }, [isRecording]);
 
-  const handleGenerateTopics = useCallback(async () => {
+  const handleGenerateTopics = useCallback(async (category = selectedCategory) => {
     setIsGeneratingTopics(true);
 
     try {
-      const newTopics = await generateTopics('general');
+      const newTopics = await generateTopics(category);
       setTopics((Array.isArray(newTopics) ? newTopics : []).filter(Boolean));
     } catch (error) {
       console.error('Failed to generate topics:', error);
@@ -617,16 +628,16 @@ function ExtemporePractice({
     } finally {
       setIsGeneratingTopics(false);
     }
-  }, [generateTopics]);
+  }, [generateTopics, selectedCategory]);
 
   useEffect(() => {
-    if (didInitTopicsRef.current) {
+    if (phase !== EXT_STATES.TOPIC_SELECTION) {
       return;
     }
 
-    didInitTopicsRef.current = true;
-    void handleGenerateTopics();
-  }, [handleGenerateTopics]);
+    void handleGenerateTopics(selectedCategory);
+    resetSelector();
+  }, [handleGenerateTopics, phase, resetSelector, selectedCategory]);
 
   const clearSelectionTimers = useCallback(() => {
     if (spinTimerRef.current) {
@@ -795,6 +806,50 @@ function ExtemporePractice({
     return (
       <div className="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden text-text custom-scrollbar">
         <div className="flex w-full max-w-3xl flex-col items-center gap-10 px-4 sm:px-6">
+          <section className="w-full">
+            <div className="mb-4 text-center">
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/80">Choose a topic family</p>
+              <h2 className="mt-2 font-display text-[1.9rem] font-semibold tracking-[-0.04em] text-text">
+                Pick an easy lane to speak from
+              </h2>
+              <p className="mt-2 text-[14px] leading-relaxed text-on-surface-variant">
+                Each tile loads a set of broad extempore prompts. Pick one that feels natural.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {TOPIC_CATEGORIES.map((item) => {
+                const isActive = selectedCategory === item.category;
+
+                return (
+                  <button
+                    key={item.category}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory(item.category);
+                      setSelectorPhase(SELECTION_PHASES.IDLE);
+                    }}
+                    className={`group rounded-[22px] border px-4 py-4 text-left transition-all duration-200 ${
+                      isActive
+                        ? 'border-primary bg-primary/8 shadow-[0_14px_34px_rgba(29,93,82,0.12)]'
+                        : 'border-outline-variant bg-surface-container-low hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_10px_28px_rgba(24,51,46,0.08)]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-display text-[1.25rem] font-semibold tracking-[-0.03em] text-text">{item.label}</p>
+                        <p className="mt-2 text-[13px] leading-relaxed text-on-surface-variant">{item.hint}</p>
+                      </div>
+                      <span className={`mt-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${isActive ? 'bg-primary text-white' : 'bg-surface text-on-surface-variant'}`}>
+                        {isActive ? 'Selected' : 'Choose'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           <TopicReel
             topics={topics}
             selectorPhase={selectorPhase}
@@ -802,6 +857,12 @@ function ExtemporePractice({
             landingTopic={landingTopic}
             spinOffset={spinOffset}
           />
+
+          <div className="w-full rounded-[24px] border border-outline-variant bg-surface-container-low/90 px-5 py-4 text-center shadow-[0_18px_48px_rgba(24,51,46,0.06)]">
+            <p className="text-[13px] leading-relaxed text-on-surface-variant">
+              {TOPIC_CATEGORIES.find((item) => item.category === selectedCategory)?.label || 'Topic'} is active. Press start to reveal one of the prompts below.
+            </p>
+          </div>
 
           <OatButton
             type="button"

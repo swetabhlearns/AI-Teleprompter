@@ -1,8 +1,7 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { useCallback } from 'react';
-import { useRecorder } from '../../hooks/useRecorder';
-import { useGroq } from '../../hooks/useGroq';
-import ExtemporePractice from '../../components/ExtemporePractice';
+import ExtemporeSpeakOnly from '../../components/ExtemporeSpeakOnly';
+import ExtemporeTopicPicker from '../../components/ExtemporeTopicPicker';
 
 const EXTEMPORE_TOPIC_STORAGE_KEY = 'extempore.selectedTopic';
 
@@ -32,19 +31,6 @@ function clearStoredTopic() {
 
 export function ExtemporeSelectionRoute() {
   const navigate = useNavigate();
-  const { isRecording, duration, audioLevel, isSpeaking, startRecording, stopRecording } = useRecorder();
-  const { generateExtemporeTopics, generateExtemporeCoachSuggestion, transcribeAudio } = useGroq();
-
-  const handleStartExtempore = useCallback(() => {
-    if (window.posthog) window.posthog.capture('extempore_started');
-    startRecording().catch((err) => {
-      console.error('Extempore recording failed to start:', err);
-    });
-  }, [startRecording]);
-
-  const handleStopPractice = useCallback(async () => {
-    return stopRecording();
-  }, [stopRecording]);
 
   const handleTopicLocked = useCallback((topic) => {
     storeTopic(topic);
@@ -53,39 +39,14 @@ export function ExtemporeSelectionRoute() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <ExtemporePractice
-        isRecording={isRecording}
-        duration={duration}
-        audioLevel={audioLevel}
-        isSpeaking={isSpeaking}
-        onStartRecording={handleStartExtempore}
-        onStopRecording={handleStopPractice}
-        generateTopics={generateExtemporeTopics}
-        generateCoachSuggestion={generateExtemporeCoachSuggestion}
-        transcribeAudio={transcribeAudio}
-        mode="selection"
-        onTopicLocked={handleTopicLocked}
-      />
+      <ExtemporeTopicPicker onTopicSelect={handleTopicLocked} />
     </div>
   );
 }
 
 export function ExtemporeLiveRoute() {
   const navigate = useNavigate();
-  const { isRecording, duration, audioLevel, isSpeaking, startRecording, stopRecording } = useRecorder();
-  const { generateExtemporeTopics, generateExtemporeCoachSuggestion, transcribeAudio } = useGroq();
   const selectedTopic = getStoredTopic();
-
-  const handleStartExtempore = useCallback(() => {
-    if (window.posthog) window.posthog.capture('extempore_started');
-    startRecording().catch((err) => {
-      console.error('Extempore recording failed to start:', err);
-    });
-  }, [startRecording]);
-
-  const handleStopPractice = useCallback(async () => {
-    return stopRecording();
-  }, [stopRecording]);
 
   const handleChooseDifferentTopic = useCallback(() => {
     clearStoredTopic();
@@ -98,17 +59,7 @@ export function ExtemporeLiveRoute() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <ExtemporePractice
-        isRecording={isRecording}
-        duration={duration}
-        audioLevel={audioLevel}
-        isSpeaking={isSpeaking}
-        onStartRecording={handleStartExtempore}
-        onStopRecording={handleStopPractice}
-        generateTopics={generateExtemporeTopics}
-        generateCoachSuggestion={generateExtemporeCoachSuggestion}
-        transcribeAudio={transcribeAudio}
-        mode="live"
+      <ExtemporeSpeakOnly
         selectedTopic={selectedTopic}
         onChooseDifferentTopic={handleChooseDifferentTopic}
       />
