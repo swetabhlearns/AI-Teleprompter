@@ -38,12 +38,12 @@ async function parseBinaryResponse(response) {
   return response.blob();
 }
 
-async function requestJson(pathname, { method = 'POST', body, headers = {}, signal } = {}) {
+async function requestJson(pathname, { method = 'POST', body, headers = {}, signal, capability = false } = {}) {
   const response = await fetch(getWorkerApiUrl(pathname), {
     method,
     headers: {
-      'Content-Type': 'application/json',
-      ...getAnonymousCapabilityHeaders(),
+      ...(body == null ? {} : { 'Content-Type': 'application/json' }),
+      ...(capability ? getAnonymousCapabilityHeaders() : {}),
       ...headers
     },
     body: body == null ? undefined : JSON.stringify(body),
@@ -122,36 +122,36 @@ export const workerApi = {
     });
   },
   listInterviewSessions() {
-    return requestJson('/api/interview/sessions', { method: 'GET' });
+    return requestJson('/api/interview/sessions', { method: 'GET', capability: true });
   },
   createInterviewSession(payload) {
-    return requestJson('/api/interview/sessions', { body: payload });
+    return requestJson('/api/interview/sessions', { body: payload, capability: true });
   },
   getInterviewSession(id) {
-    return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'GET' });
+    return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'GET', capability: true });
   },
   updateInterviewSession(id, payload) {
-    return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload });
+    return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, capability: true });
   },
   deleteInterviewSession(id) {
-    return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'DELETE', capability: true });
   },
   async createInterviewLiveSession(payload) {
-    const result = await requestJson('/api/interview/live-sessions', { body: payload });
+    const result = await requestJson('/api/interview/live-sessions', { body: payload, capability: true });
     if (result?.wsUrl && payload?.id) liveSessionWebSocketUrls.set(String(payload.id), result.wsUrl);
     return result;
   },
   getInterviewLiveSession(id) {
-    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}`, { method: 'GET' });
+    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}`, { method: 'GET', capability: true });
   },
   getInterviewLiveSessionLog(id) {
-    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/log`, { method: 'GET' });
+    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/log`, { method: 'GET', capability: true });
   },
   completeInterviewLiveSession(id, payload) {
-    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/complete`, { body: payload });
+    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/complete`, { body: payload, capability: true });
   },
   failInterviewLiveSession(id, payload) {
-    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/fail`, { body: payload });
+    return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/fail`, { body: payload, capability: true });
   },
   getInterviewLiveSessionWebSocketUrl(id) {
     return liveSessionWebSocketUrls.get(String(id))

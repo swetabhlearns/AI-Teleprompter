@@ -1,4 +1,4 @@
-import { jsonResponse } from './lib/http.js';
+import { applyCors, jsonResponse } from './lib/http.js';
 import { InterviewLiveSessionDO } from './durableObjects/InterviewLiveSessionDO.js';
 import { handleAiRoutes } from './routes/ai.js';
 import { handleInterviewSessions } from './routes/interviewSessions.js';
@@ -44,51 +44,44 @@ function buildRouteManifest() {
 
 export default {
   async fetch(request, env) {
+    const respond = (response) => applyCors(response, request, env);
     try {
       const url = new URL(request.url);
 
       if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-            'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-            'Access-Control-Max-Age': '86400'
-          }
-        });
+        return respond(new Response(null, { status: 204 }));
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
-        return jsonResponse({
+        return respond(jsonResponse({
           ok: true,
           service: env?.APP_NAME || 'AI Tracker',
           status: 'healthy'
-        });
+        }));
       }
 
       if (request.method === 'GET' && url.pathname === '/api') {
-        return jsonResponse(buildRouteManifest());
+        return respond(jsonResponse(buildRouteManifest()));
       }
 
       const aiResponse = await handleAiRoutes(request, env, url);
       if (aiResponse) {
-        return aiResponse;
+        return respond(aiResponse);
       }
 
       const interviewSessionsResponse = await handleInterviewSessions(request, env, url);
       if (interviewSessionsResponse) {
-        return interviewSessionsResponse;
+        return respond(interviewSessionsResponse);
       }
 
       const interviewLiveSessionsResponse = await handleInterviewLiveSessions(request, env, url);
       if (interviewLiveSessionsResponse) {
-        return interviewLiveSessionsResponse;
+        return respond(interviewLiveSessionsResponse);
       }
 
-      return notFound();
+      return respond(notFound());
     } catch (error) {
-      return jsonResponse(
+      return respond(jsonResponse(
         {
           ok: false,
           error: {
@@ -97,7 +90,7 @@ export default {
           }
         },
         { status: 500 }
-      );
+      ));
     }
   }
 };
