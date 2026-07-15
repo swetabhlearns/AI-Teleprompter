@@ -9,6 +9,7 @@ import {
   validateInterviewDuration
 } from '../worker/src/lib/protection.js';
 import { handleInterviewLiveSessions } from '../worker/src/routes/interviewLiveSessions.js';
+import { handleInterviewSessions } from '../worker/src/routes/interviewSessions.js';
 
 test('bounded JSON parsing rejects streamed bodies beyond the limit', async () => {
   const request = new Request('https://worker.example/api/script/generate', {
@@ -55,6 +56,12 @@ test('live-session duration validation is returned as a client error', async () 
 
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error.code, 'invalid_interview_duration');
+});
+
+test('archive router does not intercept token-authenticated WebSocket routes', async () => {
+  const request = new Request('https://worker.example/api/interview/live-sessions/session-1/ws?access_token=token');
+  const response = await handleInterviewSessions(request, {}, new URL(request.url));
+  assert.equal(response, null);
 });
 
 test('expensive AI routes return 429 when the binding rejects the actor', async () => {

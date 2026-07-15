@@ -11,6 +11,10 @@ import { jsonResponse, parseJsonBody } from '../lib/http.js';
 import { ownerErrorResponse, requireOwnerContext } from '../lib/ownership.js';
 
 export async function handleInterviewSessions(request, env, url) {
+  const isCollectionRoute = url.pathname === '/api/interview/sessions';
+  const sessionMatch = url.pathname.match(/^\/api\/interview\/sessions\/([^/]+)$/);
+  if (!isCollectionRoute && !sessionMatch) return null;
+
   let owner;
   try {
     owner = await requireOwnerContext(request);
@@ -54,12 +58,8 @@ export async function handleInterviewSessions(request, env, url) {
     }
   }
 
-  const match = url.pathname.match(/^\/api\/interview\/sessions\/([^/]+)$/);
-  if (!match) {
-    return null;
-  }
-
-  const sessionId = decodeURIComponent(match[1]);
+  if (!sessionMatch) return null;
+  const sessionId = decodeURIComponent(sessionMatch[1]);
 
   if (request.method === 'GET') {
     try {
