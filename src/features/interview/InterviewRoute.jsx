@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState, startTransition } from 'react
 import { useNavigate } from '@tanstack/react-router';
 import InterviewSetup from '../../components/InterviewSetup';
 import InterviewSession from '../../components/InterviewSession';
+import InterviewPreflight from '../../components/InterviewPreflight';
+import InterviewCompletion from '../../components/InterviewCompletion';
 import { useGroq } from '../../hooks/useGroq';
 import { useInterview, INTERVIEW_STATES } from '../../hooks/useInterview';
 import { useInterviewArchive } from '../../hooks/useInterviewArchive';
@@ -21,10 +23,13 @@ export function InterviewRoute() {
   const currentArchiveTurnIndexRef = useRef(0);
   const lastArchiveTurnIndexRef = useRef(0);
   const geminiTransitionHandledRef = useRef('');
-  const archivedSessionFinalizedRef = useRef(null);
   const archivedSessionFailedRef = useRef(null);
   const analysisRequestSentRef = useRef(false);
   const [analysisState, setAnalysisState] = useState('idle');
+  const [analysisError, setAnalysisError] = useState('');
+  const [completedSession, setCompletedSession] = useState(null);
+  const [preflightOpen, setPreflightOpen] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   const { transcribeAudio, isLoading: isTranscribing } = useGroq();
   const geminiLive = useGeminiLive();
@@ -48,59 +53,57 @@ export function InterviewRoute() {
   const waitForAnalysisCompletion = useCallback(async (sessionId) => {
     if (!sessionId) return false;
 
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
       try {
         const liveSession = await workerApi.getInterviewLiveSession(sessionId);
         const analysisStatus = liveSession?.session?.analysisStatus || liveSession?.analysisStatus || '';
         if (analysisStatus === 'completed' || liveSession?.session?.status === 'completed') {
           await interviewArchive.refreshSessions();
-          return true;
+          for (let archiveAttempt = 0; archiveAttempt < 5; archiveAttempt += 1) {
+            const session = await interviewArchive.getSession(sessionId);
+            if (session) return session;
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+          throw new Error('Analysis completed, but the report archive is not available yet.');
+        }
+        if (analysisStatus === 'failed' || liveSession?.session?.status === 'failed') {
+          throw new Error(liveSession?.session?.error?.message || 'The Worker could not complete the interview analysis.');
         }
       } catch (err) {
+        if (/could not complete|not available yet/i.test(err?.message || '')) throw err;
         console.warn('Waiting for background analysis failed:', err);
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
-    return false;
+    throw new Error('Analysis is taking longer than expected. Your interview is saved; retry the report when ready.');
   }, [interviewArchive]);
+
+  const runAnalysis = useCallback(async (sessionId) => {
+    if (!sessionId || analysisRequestSentRef.current) return;
+    analysisRequestSentRef.current = true;
+    setAnalysisState('running');
+    setAnalysisError('');
+    setCompletedSession(null);
+
+    try {
+      await workerApi.completeInterviewLiveSession(sessionId, {});
+      const session = await waitForAnalysisCompletion(sessionId);
+      setCompletedSession(session);
+      setAnalysisState('completed');
+    } catch (error) {
+      console.warn('Interview analysis failed:', error);
+      setAnalysisError(error?.message || 'Interview analysis failed.');
+      setAnalysisState('failed');
+    }
+  }, [waitForAnalysisCompletion]);
 
   useEffect(() => {
     if (geminiLiveError && ![INTERVIEW_STATES.IDLE, INTERVIEW_STATES.SETUP, INTERVIEW_STATES.COMPLETE, INTERVIEW_STATES.ERROR].includes(interviewState)) {
       failInterview(geminiLiveError);
     }
   }, [geminiLiveError, interviewState, failInterview]);
-
-  useEffect(() => {
-    const sessionId = currentArchiveSessionIdRef.current;
-    if (!sessionId || interviewState !== INTERVIEW_STATES.COMPLETE || analysisState !== 'running' || analysisRequestSentRef.current) {
-      return;
-    }
-
-    void (async () => {
-      analysisRequestSentRef.current = true;
-      try {
-        await workerApi.completeInterviewLiveSession(sessionId, {});
-      } catch (err) {
-        console.warn('Failed to start backend analysis:', err);
-        setAnalysisState('failed');
-      }
-    })();
-  }, [analysisState, geminiLive, interview.config, interviewState]);
-
-  useEffect(() => {
-    if (analysisState !== 'running') {
-      return;
-    }
-
-    if (geminiLiveLastEvent === 'analysis-complete') {
-      void interviewArchive.refreshSessions();
-      startTransition(() => {
-        setAnalysisState('completed');
-      });
-    }
-  }, [analysisState, geminiLiveLastEvent, interviewArchive]);
 
   useEffect(() => {
     if ([INTERVIEW_STATES.IDLE, INTERVIEW_STATES.SETUP, INTERVIEW_STATES.COMPLETE, INTERVIEW_STATES.ERROR].includes(interviewState)) {
@@ -130,10 +133,8 @@ export function InterviewRoute() {
 
     if (interview.state === INTERVIEW_STATES.COMPLETE) {
       liveTurnContextRef.current = null;
-      if (analysisState === 'idle') {
-        startTransition(() => {
-          setAnalysisState('running');
-        });
+      if (analysisState === 'idle' && !analysisRequestSentRef.current) {
+        void runAnalysis(sessionId);
       }
       return;
     }
@@ -144,7 +145,7 @@ export function InterviewRoute() {
         setAnalysisState('failed');
       });
     }
-  }, [analysisState, geminiLive, interview, interview.error, interview.state]);
+  }, [analysisState, interview.error, interview.state, runAnalysis]);
 
   const handleInterviewQuestionAsked = useCallback((question, questionIndex) => {
     const sessionId = currentArchiveSessionIdRef.current;
@@ -204,8 +205,6 @@ export function InterviewRoute() {
       return;
     }
 
-    analysisRequestSentRef.current = true;
-
     if (liveCaptureActiveRef.current || geminiLive.isCapturing) {
       try {
         await geminiLive.stopAnswerCapture();
@@ -216,24 +215,10 @@ export function InterviewRoute() {
       liveCaptureRef.current = null;
     }
 
-    void (async () => {
-      try {
-        await workerApi.completeInterviewLiveSession(sessionId, {});
-        void waitForAnalysisCompletion(sessionId);
-      } catch (err) {
-        console.warn('Failed to start backend analysis:', err);
-        analysisRequestSentRef.current = false;
-      }
-    })();
-
     liveTurnContextRef.current = null;
-    currentArchiveTurnIndexRef.current = 0;
-    lastArchiveTurnIndexRef.current = 0;
-    interview.resetInterview();
-    geminiLive.reset();
-    currentArchiveSessionIdRef.current = sessionId;
-    setAnalysisState('idle');
-  }, [geminiLive, interview, setAnalysisState, waitForAnalysisCompletion]);
+    interview.endInterview();
+    void runAnalysis(sessionId);
+  }, [geminiLive, interview, runAnalysis]);
 
   const handleReuseArchive = useCallback(async (sessionId) => {
     try {
@@ -241,13 +226,15 @@ export function InterviewRoute() {
       if (!session) return;
 
       currentArchiveSessionIdRef.current = null;
-      archivedSessionFinalizedRef.current = null;
       archivedSessionFailedRef.current = null;
       analysisRequestSentRef.current = false;
       interview.resetInterview();
       geminiLive.reset();
       liveCaptureActiveRef.current = false;
       liveCaptureRef.current = null;
+      setCompletedSession(null);
+      setAnalysisError('');
+      setPreflightOpen(false);
       interview.setConfig((prev) => ({
         ...prev,
         ...session.config,
@@ -321,7 +308,6 @@ export function InterviewRoute() {
   const handleStartInterview = useCallback(async () => {
     try {
       geminiTransitionHandledRef.current = '';
-      archivedSessionFinalizedRef.current = null;
       archivedSessionFailedRef.current = null;
       analysisRequestSentRef.current = false;
       currentArchiveTurnIndexRef.current = 0;
@@ -332,6 +318,9 @@ export function InterviewRoute() {
         || `interview-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       currentArchiveSessionIdRef.current = archiveSessionId;
       setAnalysisState('idle');
+      setAnalysisError('');
+      setCompletedSession(null);
+      setIsStarting(true);
 
       console.info('[Interview] start requested', {
         mode: interviewMode,
@@ -339,6 +328,7 @@ export function InterviewRoute() {
       });
       if (!geminiLive.isReady || geminiLive.error) {
         interview.failInterview(geminiLive.error || 'Gemini 3.1 Flash Live is unavailable.');
+        setPreflightOpen(false);
         return;
       }
 
@@ -349,6 +339,7 @@ export function InterviewRoute() {
       console.info('[Interview] Gemini 3.1 Flash Live connect result', liveConnection);
       if (!liveConnection.ok) {
         interview.failInterview(liveConnection.reason || 'Gemini 3.1 Flash Live is unavailable.');
+        setPreflightOpen(false);
         return;
       }
 
@@ -362,22 +353,28 @@ export function InterviewRoute() {
       interview.startInterview([openingCue]);
       handleInterviewQuestionAsked(openingCue, 0);
       beginInterviewListening({ preserveTimer: false, startTimer: false });
+      setPreflightOpen(false);
     } catch (err) {
       console.error('Failed to start interview:', err);
       interview.failInterview(err?.message || 'Failed to start interview');
+      setPreflightOpen(false);
+    } finally {
+      setIsStarting(false);
     }
   }, [beginInterviewListening, handleInterviewQuestionAsked, interview, interviewMode, geminiLive]);
 
   const handleInterviewRestart = useCallback(() => {
     geminiTransitionHandledRef.current = '';
     currentArchiveSessionIdRef.current = null;
-    archivedSessionFinalizedRef.current = null;
     archivedSessionFailedRef.current = null;
     analysisRequestSentRef.current = false;
     currentArchiveTurnIndexRef.current = 0;
     lastArchiveTurnIndexRef.current = 0;
     liveTurnContextRef.current = null;
     setAnalysisState('idle');
+    setAnalysisError('');
+    setCompletedSession(null);
+    setPreflightOpen(false);
     interview.resetInterview();
     geminiLive.reset();
     liveCaptureActiveRef.current = false;
@@ -388,19 +385,41 @@ export function InterviewRoute() {
   const handleInterviewGoHome = useCallback(() => {
     geminiTransitionHandledRef.current = '';
     currentArchiveSessionIdRef.current = null;
-    archivedSessionFinalizedRef.current = null;
     archivedSessionFailedRef.current = null;
     analysisRequestSentRef.current = false;
     currentArchiveTurnIndexRef.current = 0;
     lastArchiveTurnIndexRef.current = 0;
     liveTurnContextRef.current = null;
     setAnalysisState('idle');
+    setAnalysisError('');
+    setCompletedSession(null);
+    setPreflightOpen(false);
     interview.resetInterview();
     geminiLive.reset();
     liveCaptureActiveRef.current = false;
     liveCaptureRef.current = null;
     void navigate({ to: '/script' });
   }, [geminiLive, interview, navigate]);
+
+  const handleOpenPreflight = useCallback(() => {
+    setAnalysisError('');
+    setPreflightOpen(true);
+  }, []);
+
+  const handleRetryAnalysis = useCallback(() => {
+    const sessionId = currentArchiveSessionIdRef.current;
+    if (!sessionId) {
+      setAnalysisError('The completed session identifier is unavailable. Return to setup and start a new interview.');
+      return;
+    }
+    analysisRequestSentRef.current = false;
+    void runAnalysis(sessionId);
+  }, [runAnalysis]);
+
+  const handleExportCompletedSession = useCallback(() => {
+    const sessionId = completedSession?.id || currentArchiveSessionIdRef.current;
+    if (sessionId) void handleExportArchive(sessionId);
+  }, [completedSession, handleExportArchive]);
 
   const liveStatus = {
     mode: interviewMode,
@@ -418,11 +437,11 @@ export function InterviewRoute() {
   return (
     <MagicBackground className="flex min-h-screen flex-col">
     <div className="flex flex-1 flex-col px-4 py-4 md:px-6 md:py-6">
-      {(interview.state === INTERVIEW_STATES.IDLE || interview.state === INTERVIEW_STATES.SETUP) && (
+      {(interview.state === INTERVIEW_STATES.IDLE || interview.state === INTERVIEW_STATES.SETUP) && !preflightOpen && (
         <InterviewSetup
           config={interview.config}
           setConfig={interview.setConfig}
-          onStartInterview={handleStartInterview}
+          onStartInterview={handleOpenPreflight}
           isLoading={isTranscribing}
           liveStatus={{
             isReady: geminiLive.isReady,
@@ -442,6 +461,15 @@ export function InterviewRoute() {
           archiveError={interviewArchive.error}
           onReuseArchive={handleReuseArchive}
           onExportArchive={handleExportArchive}
+        />
+      )}
+
+      {(interview.state === INTERVIEW_STATES.IDLE || interview.state === INTERVIEW_STATES.SETUP) && preflightOpen && (
+        <InterviewPreflight
+          config={interview.config}
+          onClose={() => setPreflightOpen(false)}
+          onBegin={handleStartInterview}
+          isStarting={isStarting}
         />
       )}
 
@@ -482,6 +510,17 @@ export function InterviewRoute() {
             </div>
           </MagicCard>
         </div>
+      )}
+
+      {interview.state === INTERVIEW_STATES.COMPLETE && (
+        <InterviewCompletion
+          analysisState={analysisState}
+          analysisError={analysisError}
+          session={completedSession}
+          onRetry={handleRetryAnalysis}
+          onPracticeAgain={handleInterviewRestart}
+          onExport={handleExportCompletedSession}
+        />
       )}
     </div>
     </MagicBackground>

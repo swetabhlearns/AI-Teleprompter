@@ -523,9 +523,9 @@ export class InterviewLiveSessionDO {
       return;
     }
 
-    await this.flushPendingGeminiTurn({ force: true });
     this.phase = 'analysis';
     this.analysisStatus = 'running';
+    await this.flushPendingGeminiTurn({ force: true });
 
     await this.persistSessionPatch({
       phase: this.phase,
@@ -558,7 +558,7 @@ export class InterviewLiveSessionDO {
     this.analysisTask = null;
 
     await this.clearAnalysisFallbackAlarm();
-    await this.finalizeArchiveSession(analysisTranscript);
+    await this.finalizeArchiveSession(analysisTranscript, turns);
     await this.persistLiveSessionRecord({
       status: 'completed',
       phase: 'completed',
@@ -631,7 +631,42 @@ export class InterviewLiveSessionDO {
 
   }
 
-  async finalizeArchiveSession(analysisTranscript = '') {
+  async finalizeArchiveSession(analysisTranscript = '', liveTurns = []) {
+    const interviewTurns = (Array.isArray(liveTurns) ? liveTurns : [])
+      .filter((turn) => turn && (turn.assistantText || turn.inputTranscript || turn.outputTranscript || turn.text || turn.transcript))
+      .map((turn, index) => {
+        const turnIndex = Number.isFinite(Number(turn.turnIndex)) ? Number(turn.turnIndex) : index;
+        const assistantText = String(turn.assistantText || turn.outputTranscript || turn.text || '').trim();
+        const transcript = String(turn.inputTranscript || turn.transcript || '').trim();
+        return {
+          turnIndex,
+          questionIndex: Number.isFinite(Number(turn.questionIndex)) ? Number(turn.questionIndex) : turnIndex,
+          assistantText,
+          transcript,
+          interrupted: Boolean(turn.interrupted || turn.payload?.interrupted),
+          createdAt: turn.createdAt || null
+        };
+      });
+    const questions = interviewTurns
+      .filter((turn) => turn.assistantText)
+      .map((turn) => ({
+        turnIndex: turn.turnIndex,
+        questionIndex: turn.questionIndex,
+        text: turn.assistantText,
+        assistantText: turn.assistantText,
+        askedAt: turn.createdAt
+      }));
+    const answers = interviewTurns
+      .filter((turn) => turn.transcript)
+      .map((turn) => ({
+        turnIndex: turn.turnIndex,
+        questionIndex: turn.questionIndex,
+        transcript: turn.transcript,
+        answeredAt: turn.createdAt,
+        interrupted: turn.interrupted,
+        source: 'gemini-live'
+      }));
+
     return saveInterviewSession(this.env, {
       id: this.sessionId,
       version: 1,
@@ -653,11 +688,11 @@ export class InterviewLiveSessionDO {
         finishedAt: nowIso(),
         error: null
       },
-      questions: [],
-      answers: [],
+      questions,
+      answers,
       evaluations: [],
       turnLog: [],
-      conversationTimeline: [],
+      conversationTimeline: interviewTurns,
       conversationLedger: [],
       transcriptTimeline: [],
       turnLedger: [],
@@ -667,7 +702,9 @@ export class InterviewLiveSessionDO {
       },
       sessionSummary: {
         analysisStatus: 'completed',
-        analysisTranscriptPreview: analysisTranscript.slice(0, 240)
+        analysisTranscriptPreview: analysisTranscript.slice(0, 240),
+        turnCount: interviewTurns.length,
+        answeredTurnCount: answers.length
       },
       raw: {
         analysisTranscript,
