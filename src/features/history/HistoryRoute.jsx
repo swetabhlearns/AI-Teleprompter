@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowRight, ClockCounterClockwise, MagnifyingGlass, Trash } from '@phosphor-icons/react';
+import { ArrowRight, CheckCircle, ClockCounterClockwise, Fire, MagnifyingGlass, Trash, TrendUp } from '@phosphor-icons/react';
 import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader, MagicSelect } from '../../components/ui/MagicUI';
 import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
 import { buildNextPracticeRecommendation, loadPracticeGoal, savePracticeGoal } from '../../utils/practiceGoals';
@@ -13,6 +13,12 @@ const MODE_PATHS = { script: '/script', interview: '/interview', extempore: '/ex
 function formatDate(value) {
   if (!value) return 'Recently';
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+function formatTrend(trend) {
+  if (trend.current > 0 && trend.previous === 0) return 'New this week';
+  if (trend.delta === 0) return 'Same as prior week';
+  return `${trend.delta > 0 ? '+' : ''}${trend.delta} vs prior week`;
 }
 
 export function HistoryRoute() {
@@ -30,6 +36,7 @@ export function HistoryRoute() {
   const recommendation = useMemo(() => buildNextPracticeRecommendation(activities, goal), [activities, goal]);
   const profile = useMemo(() => buildPracticeProfile(activities), [activities]);
   const drillSummary = useMemo(() => summarizePracticeDrills(drills), [drills]);
+  const completedDrills = useMemo(() => drills.filter((drill) => drill.status === 'completed').slice(0, 3), [drills]);
   const weeklyProgress = Math.min(100, Math.round((insights.recentCount / goal.weeklyTarget) * 100));
   const sessionsRemaining = Math.max(0, goal.weeklyTarget - insights.recentCount);
   const filteredActivities = useMemo(() => {
@@ -99,8 +106,9 @@ export function HistoryRoute() {
         {activities.length > 0 ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-[20px] bg-slate-950 p-4 text-white">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Active days</p>
-              <p className="mt-2 text-2xl font-semibold">{insights.activeDays}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Current streak</p>
+              <p className="mt-2 text-2xl font-semibold">{insights.currentStreak} day{insights.currentStreak === 1 ? '' : 's'}</p>
+              <p className="mt-1 text-xs text-slate-300">Best: {insights.bestStreak} day{insights.bestStreak === 1 ? '' : 's'}</p>
             </div>
             <div className="rounded-[20px] border border-slate-200 bg-white/75 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Last 7 days</p>
@@ -152,6 +160,66 @@ export function HistoryRoute() {
           </div>
         </div>
       </MagicCard>
+
+      {activities.length > 0 ? (
+        <MagicCard className="p-6 md:p-8" hover={false}>
+          <MagicSectionHeader
+            eyebrow="Practice momentum"
+            title="Consistency and follow-through"
+            description="A factual view of completed practice. Weekly comparisons use session counts and do not imply a quality score."
+            right={<MagicBadge>{insights.activeDays} active day{insights.activeDays === 1 ? '' : 's'} overall</MagicBadge>}
+          />
+          <div className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+            <section aria-labelledby="mode-trends-title">
+              <div className="flex items-center gap-2">
+                <TrendUp size={20} className="text-emerald-700" aria-hidden="true" />
+                <h3 id="mode-trends-title" className="font-semibold text-slate-950">Mode rhythm</h3>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {Object.entries(MODE_LABELS).map(([mode, label]) => {
+                  const trend = insights.modeTrends[mode];
+                  return (
+                    <div key={mode} className="rounded-[20px] border border-slate-200 bg-white/75 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+                      <p className="mt-3 text-3xl font-semibold text-slate-950">{trend.current}</p>
+                      <p className={`mt-1 text-xs ${trend.delta > 0 ? 'font-medium text-emerald-700' : 'text-slate-500'}`}>{formatTrend(trend)}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 flex items-center gap-3 rounded-[20px] bg-slate-950 px-5 py-4 text-white">
+                <Fire size={22} className="shrink-0 text-amber-300" weight="fill" aria-hidden="true" />
+                <p className="text-sm leading-6"><span className="font-semibold">{insights.currentStreak}-day current streak.</span> Your longest run is {insights.bestStreak} day{insights.bestStreak === 1 ? '' : 's'}.</p>
+              </div>
+            </section>
+
+            <section aria-labelledby="follow-through-title" className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 id="follow-through-title" className="font-semibold text-slate-950">Drill follow-through</h3>
+                <MagicBadge>{drillSummary.completedCount} completed</MagicBadge>
+              </div>
+              {completedDrills.length > 0 ? (
+                <ol className="mt-4 space-y-3">
+                  {completedDrills.map((drill) => (
+                    <li key={drill.id} className="flex gap-3 rounded-[18px] bg-white p-4">
+                      <CheckCircle size={20} className="mt-0.5 shrink-0 text-emerald-600" weight="fill" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{MODE_LABELS[drill.mode] || drill.mode}</p>
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-700">{drill.text}</p>
+                        <p className="mt-2 text-xs text-slate-400">Completed {formatDate(drill.completedAt)}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <div className="mt-4 rounded-[18px] border border-dashed border-slate-200 bg-white px-4 py-6 text-sm leading-6 text-slate-500">
+                  Start the recommended drill, then complete an activity in that mode to record follow-through.
+                </div>
+              )}
+            </section>
+          </div>
+        </MagicCard>
+      ) : null}
 
       {activities.length > 0 ? (
         <MagicCard className="p-6 md:p-8" hover={false}>

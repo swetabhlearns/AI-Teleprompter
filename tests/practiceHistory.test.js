@@ -46,5 +46,22 @@ test('practice insights compare recent activity without inventing performance sc
   assert.equal(insights.previousCount, 1);
   assert.equal(insights.recentDelta, 1);
   assert.equal(insights.mostPracticedMode, 'interview');
+  assert.deepEqual(insights.modeTrends.interview, { current: 2, previous: 0, delta: 2 });
+  assert.deepEqual(insights.modeTrends.script, { current: 0, previous: 1, delta: -1 });
+  assert.equal(insights.currentStreak, 2);
+  assert.equal(insights.bestStreak, 2);
   assert.equal('score' in insights, false);
+});
+
+test('practice streak remains active when the latest session was yesterday', () => {
+  const insights = summarizePracticeActivities([
+    { id: '1', mode: 'script', occurredAt: '2026-07-15T08:00:00.000Z' },
+    { id: '2', mode: 'interview', occurredAt: '2026-07-14T23:00:00.000Z' },
+    { id: '3', mode: 'extempore', occurredAt: '2026-07-12T10:00:00.000Z' },
+    { id: '4', mode: 'script', occurredAt: '2026-07-11T10:00:00.000Z' },
+    { id: '5', mode: 'script', occurredAt: '2026-07-10T10:00:00.000Z' }
+  ], new Date('2026-07-16T18:00:00.000Z'));
+
+  assert.equal(insights.currentStreak, 2);
+  assert.equal(insights.bestStreak, 3);
 });

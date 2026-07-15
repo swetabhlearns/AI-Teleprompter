@@ -55,6 +55,11 @@ export function summarizePracticeActivities(activities = [], now = new Date()) {
   const sevenDays = 7 * 24 * 60 * 60 * 1000;
   const counts = {};
   const activeDays = new Set();
+  const modeTrends = Object.fromEntries(['script', 'interview', 'extempore'].map((mode) => [mode, {
+    current: 0,
+    previous: 0,
+    delta: 0
+  }]));
   let recentCount = 0;
   let previousCount = 0;
 
@@ -64,8 +69,41 @@ export function summarizePracticeActivities(activities = [], now = new Date()) {
     if (!Number.isFinite(timestamp)) continue;
     activeDays.add(new Date(timestamp).toISOString().slice(0, 10));
     const age = currentTime - timestamp;
-    if (age >= 0 && age < sevenDays) recentCount += 1;
-    else if (age >= sevenDays && age < sevenDays * 2) previousCount += 1;
+    if (age >= 0 && age < sevenDays) {
+      recentCount += 1;
+      if (modeTrends[activity.mode]) modeTrends[activity.mode].current += 1;
+    } else if (age >= sevenDays && age < sevenDays * 2) {
+      previousCount += 1;
+      if (modeTrends[activity.mode]) modeTrends[activity.mode].previous += 1;
+    }
+  }
+
+  Object.values(modeTrends).forEach((trend) => {
+    trend.delta = trend.current - trend.previous;
+  });
+
+  const dayNumbers = [...activeDays]
+    .map((day) => Math.floor(new Date(`${day}T00:00:00.000Z`).getTime() / (24 * 60 * 60 * 1000)))
+    .sort((a, b) => a - b);
+  let bestStreak = 0;
+  let runningStreak = 0;
+  let previousDay = null;
+  dayNumbers.forEach((day) => {
+    runningStreak = previousDay !== null && day === previousDay + 1 ? runningStreak + 1 : 1;
+    bestStreak = Math.max(bestStreak, runningStreak);
+    previousDay = day;
+  });
+
+  const activeDayNumbers = new Set(dayNumbers);
+  const nowDate = new Date(now);
+  const todayNumber = Math.floor(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate()) / (24 * 60 * 60 * 1000));
+  let streakCursor = activeDayNumbers.has(todayNumber)
+    ? todayNumber
+    : activeDayNumbers.has(todayNumber - 1) ? todayNumber - 1 : null;
+  let currentStreak = 0;
+  while (streakCursor !== null && activeDayNumbers.has(streakCursor)) {
+    currentStreak += 1;
+    streakCursor -= 1;
   }
 
   const mostPracticedMode = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
@@ -75,6 +113,9 @@ export function summarizePracticeActivities(activities = [], now = new Date()) {
     previousCount,
     recentDelta: recentCount - previousCount,
     mostPracticedMode,
-    counts
+    counts,
+    modeTrends,
+    currentStreak,
+    bestStreak
   };
 }
