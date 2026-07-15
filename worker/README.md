@@ -7,6 +7,7 @@ See the repository-level `README.md` for the complete application setup and depl
 ## Routes
 
 - `GET /health`
+- `GET /ready`
 - `GET /api`
 - `POST /api/script/generate`
 - `POST /api/script/refine`
@@ -15,6 +16,9 @@ See the repository-level `README.md` for the complete application setup and depl
 - `POST /api/transcribe`
 - `POST /api/tts/sarvam`
 - `POST /api/tts/elevenlabs/:voiceId?`
+- `POST /api/feedback`
+- `POST /api/events`
+- `DELETE /api/data`
 - `GET|POST /api/interview/sessions`
 - `GET|PATCH|DELETE /api/interview/sessions/:id`
 - `POST /api/interview/live-sessions`
@@ -47,6 +51,8 @@ Wrangler expects these bindings:
 Local provider credentials belong in `.dev.vars`. Production credentials must be set with `npx wrangler secret put <NAME>`.
 
 The default Gemini Live model is pinned by `GEMINI_LIVE_MODEL` in `wrangler.toml`.
+
+The Worker runs its retention job daily at 02:17 UTC. See `docs/BETA_OPERATIONS.md` for retention, deletion, monitoring, recovery, and rollback procedures.
 
 ## Migrations
 

@@ -114,6 +114,7 @@ export function AppShell() {
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white/75 text-lg shadow-[0_14px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl">
                 ✦
               </div>
+              <MagicBadge className="border-violet-200 bg-violet-50 text-violet-700">Beta</MagicBadge>
               <div className="md:hidden" role="status" aria-live="polite">
                 <MagicBadge className={`${healthClass} max-w-[9.5rem] truncate`} title={workerHealthMessage || undefined}>
                   {healthLabel}

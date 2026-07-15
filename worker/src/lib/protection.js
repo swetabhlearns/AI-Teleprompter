@@ -64,7 +64,7 @@ async function applyRateLimit(binding, key, message) {
 }
 
 export async function enforceRequestProtection(request, env, url) {
-  if (!['POST', 'PATCH'].includes(request.method)) return null;
+  if (!['POST', 'PATCH', 'DELETE'].includes(request.method)) return null;
 
   if (url.pathname === '/api/transcribe') {
     assertRequestBodySize(request, MAX_AUDIO_UPLOAD_BYTES, { requireLength: true });
@@ -81,6 +81,10 @@ export async function enforceRequestProtection(request, env, url) {
 
   if (url.pathname === '/api/feedback') {
     return applyRateLimit(env.FEEDBACK_RATE_LIMITER, actor, 'Too many feedback submissions. Try again in a minute.');
+  }
+
+  if (url.pathname === '/api/data') {
+    return applyRateLimit(env.FEEDBACK_RATE_LIMITER, actor, 'Too many beta data deletion attempts. Try again in a minute.');
   }
 
   if (url.pathname === '/api/events') {

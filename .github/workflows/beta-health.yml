@@ -1,0 +1,51 @@
+name: Beta health monitor
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: beta-health-monitor
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Worker readiness
+        id: health
+        continue-on-error: true
+        run: curl --fail --silent --show-error --retry 2 --max-time 15 "${WORKER_READY_URL}"
+        env:
+          WORKER_READY_URL: https://ai-tracker-worker.nick900684.workers.dev/ready
+
+      - name: Open or update incident issue
+        if: steps.health.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          issue_number="$(gh issue list --state open --search 'Beta Worker readiness failed in:title' --json number --jq '.[0].number // empty')"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "The scheduled readiness check failed again at $(date -u +'%Y-%m-%dT%H:%M:%SZ'). See the workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            gh issue create --title "Beta Worker readiness failed" --body "The production Worker readiness endpoint failed at $(date -u +'%Y-%m-%dT%H:%M:%SZ'). Owner: @swetabhlearns. Runbook: docs/BETA_OPERATIONS.md. Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi
+          exit 1
+
+      - name: Close recovered incident
+        if: steps.health.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          issue_number="$(gh issue list --state open --search 'Beta Worker readiness failed in:title' --json number --jq '.[0].number // empty')"
+          if [ -n "$issue_number" ]; then
+            gh issue close "$issue_number" --comment "The production readiness check recovered at $(date -u +'%Y-%m-%dT%H:%M:%SZ')."
+          fi

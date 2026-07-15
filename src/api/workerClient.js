@@ -127,6 +127,9 @@ export const workerApi = {
   submitEvent(payload) {
     return requestJson('/api/events', { body: payload, capability: true });
   },
+  deleteBetaData() {
+    return requestJson('/api/data', { method: 'DELETE', capability: true });
+  },
   listInterviewSessions() {
     return requestJson('/api/interview/sessions', { method: 'GET', capability: true });
   },

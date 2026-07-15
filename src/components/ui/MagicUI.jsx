@@ -143,12 +143,13 @@ export function MagicGlowText({ children, className = '' }) {
   );
 }
 
-export function MagicSectionHeader({ eyebrow, title, description, right }) {
+export function MagicSectionHeader({ eyebrow, title, description, right, headingLevel = 2 }) {
+  const Heading = headingLevel === 1 ? 'h1' : 'h2';
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
         {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700/80">{eyebrow}</p> : null}
-        <h2 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-slate-950">{title}</h2>
+        <Heading className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-slate-950">{title}</Heading>
         {description ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{description}</p> : null}
       </div>
       {right}

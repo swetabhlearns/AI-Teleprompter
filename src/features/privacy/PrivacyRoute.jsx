@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, Browser, Cloud, Database, ShieldCheck } from '@phosphor-icons/react';
 import { MagicBadge, MagicButton, MagicCard, MagicSectionHeader } from '../../components/ui/MagicUI';
+import { workerApi } from '../../api/workerClient';
 
 const DATA_SECTIONS = [
   {
@@ -26,10 +28,28 @@ const DATA_SECTIONS = [
 ];
 
 export function PrivacyRoute() {
+  const [deletionState, setDeletionState] = useState('idle');
+  const [deletionMessage, setDeletionMessage] = useState('');
+
+  const deleteServiceData = async () => {
+    if (!window.confirm('Delete this browser identity’s interview archives, feedback, and operational events from the beta service? This cannot be undone.')) return;
+    setDeletionState('deleting');
+    setDeletionMessage('');
+    try {
+      await workerApi.deleteBetaData();
+      setDeletionState('deleted');
+      setDeletionMessage('Your server-side beta data for this browser identity was deleted. Browser-local drafts and history remain on this device.');
+    } catch (error) {
+      setDeletionState('error');
+      setDeletionMessage(error?.message || 'Deletion could not be completed. Please try again.');
+    }
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 py-4">
       <MagicCard className="p-6 md:p-9" hover={false}>
         <MagicSectionHeader
+          headingLevel={1}
           eyebrow="Beta data notice"
           title="Your data, without an account"
           description="This explains the current beta behavior in plain language. It is a product data notice, not a substitute for a final legal privacy policy."
@@ -54,10 +74,21 @@ export function PrivacyRoute() {
         <ul className="mt-5 space-y-3 text-sm leading-6 text-slate-600">
           <li><span className="font-semibold text-slate-900">Local data:</span> Clear the activity index from History, delete saved scripts from the library, or clear this site’s browser storage to reset all local data.</li>
           <li><span className="font-semibold text-slate-900">Interview archives:</span> Individual archived interviews can be deleted from the application.</li>
-          <li><span className="font-semibold text-slate-900">Feedback and operational events:</span> There is not yet a self-service deletion interface because the beta has no accounts. Defining retention and deletion support is a launch gate before general availability.</li>
+          <li><span className="font-semibold text-slate-900">Retention:</span> Operational events are retained for 30 days, optional feedback for 180 days, and interview archives for 365 days. Expired records are removed daily.</li>
+          <li><span className="font-semibold text-slate-900">Server-side deletion:</span> Use the control below to delete interview archives, feedback, and operational events associated with this browser identity.</li>
           <li><span className="font-semibold text-slate-900">Authentication:</span> The beta uses a random browser capability rather than a login. Clearing browser storage creates a new anonymous identity and removes access to data associated with the old capability.</li>
         </ul>
-        <MagicButton as={Link} to="/history" variant="secondary" className="mt-7"><ArrowLeft size={18} /> Return to History</MagicButton>
+        <div className="mt-7 flex flex-wrap gap-3">
+          <MagicButton as={Link} to="/history" variant="secondary"><ArrowLeft size={18} /> Return to History</MagicButton>
+          <MagicButton type="button" variant="secondary" onClick={deleteServiceData} disabled={deletionState === 'deleting'}>
+            {deletionState === 'deleting' ? 'Deleting…' : 'Delete my beta service data'}
+          </MagicButton>
+        </div>
+        {deletionMessage ? (
+          <p className={`mt-4 text-sm ${deletionState === 'error' ? 'text-rose-700' : 'text-emerald-700'}`} role="status">
+            {deletionMessage}
+          </p>
+        ) : null}
       </MagicCard>
     </div>
   );

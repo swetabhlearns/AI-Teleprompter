@@ -6,6 +6,8 @@ import { handleInterviewLiveSessions } from './routes/interviewLiveSessions.js';
 import { enforceRequestProtection, protectionErrorResponse } from './lib/protection.js';
 import { handleFeedback } from './routes/feedback.js';
 import { handleEvents } from './routes/events.js';
+import { handleDataRights } from './routes/dataRights.js';
+import { enforceRetention } from './lib/retention.js';
 
 function notFound() {
   return jsonResponse(
@@ -34,6 +36,7 @@ function buildRouteManifest() {
       'POST /api/tts/elevenlabs/:voiceId?',
       'POST /api/feedback',
       'POST /api/events',
+      'DELETE /api/data',
       'GET /api/interview/sessions',
       'POST /api/interview/sessions',
       'PATCH /api/interview/sessions/:id',
@@ -110,6 +113,11 @@ export default {
         return respond(eventsResponse);
       }
 
+      const dataRightsResponse = await handleDataRights(request, env, url);
+      if (dataRightsResponse) {
+        return respond(dataRightsResponse);
+      }
+
       const interviewLiveSessionsResponse = await handleInterviewLiveSessions(request, env, url);
       if (interviewLiveSessionsResponse) {
         return respond(interviewLiveSessionsResponse);
@@ -130,6 +138,16 @@ export default {
         { status: 500 }
       ));
     }
+  },
+
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(enforceRetention(env).catch((error) => {
+      console.error(JSON.stringify({
+        message: 'retention_failed',
+        error: error instanceof Error ? error.message : String(error)
+      }));
+      throw error;
+    }));
   }
 };
 
