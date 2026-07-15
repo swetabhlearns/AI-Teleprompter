@@ -8,7 +8,7 @@ enabled = true
 [vars]
 APP_NAME = "AI Tracker"
 GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
-ALLOWED_ORIGINS = "https://ai-teleprompter.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = "https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
 
 [[d1_databases]]
 binding = "DB"

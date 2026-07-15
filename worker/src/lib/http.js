@@ -15,12 +15,23 @@ function getAllowedOrigins(env = {}) {
     .filter(Boolean);
 }
 
+function matchesAllowedOrigin(origin, allowedOrigin) {
+  if (!allowedOrigin.includes('*')) return origin === allowedOrigin;
+
+  const [prefix, suffix, ...extraParts] = allowedOrigin.split('*');
+  if (extraParts.length > 0 || !prefix || !suffix) return false;
+  if (!origin.startsWith(prefix) || !origin.endsWith(suffix)) return false;
+
+  const wildcardValue = origin.slice(prefix.length, origin.length - suffix.length);
+  return /^[a-z0-9-]+$/i.test(wildcardValue);
+}
+
 export function applyCors(response, request, env = {}) {
   if (response.status === 101) return response;
 
   const origin = String(request.headers.get('Origin') || '').replace(/\/$/, '');
   const headers = new Headers(response.headers);
-  if (origin && getAllowedOrigins(env).includes(origin)) {
+  if (origin && getAllowedOrigins(env).some((allowedOrigin) => matchesAllowedOrigin(origin, allowedOrigin))) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Vary', 'Origin');
   } else {
