@@ -4,6 +4,7 @@ import { ArrowRight, ClockCounterClockwise, MagnifyingGlass, Trash } from '@phos
 import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader, MagicSelect } from '../../components/ui/MagicUI';
 import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
 import { buildNextPracticeRecommendation, loadPracticeGoal, savePracticeGoal } from '../../utils/practiceGoals';
+import { buildPracticeProfile } from '../../utils/practiceProfile';
 import { loadPracticeDrills, startPracticeDrill, summarizePracticeDrills } from '../../utils/practiceDrills';
 
 const MODE_LABELS = { script: 'Script', interview: 'Interview', extempore: 'Extempore' };
@@ -27,6 +28,7 @@ export function HistoryRoute() {
   }), {}), [activities]);
   const insights = useMemo(() => summarizePracticeActivities(activities), [activities]);
   const recommendation = useMemo(() => buildNextPracticeRecommendation(activities, goal), [activities, goal]);
+  const profile = useMemo(() => buildPracticeProfile(activities), [activities]);
   const drillSummary = useMemo(() => summarizePracticeDrills(drills), [drills]);
   const weeklyProgress = Math.min(100, Math.round((insights.recentCount / goal.weeklyTarget) * 100));
   const sessionsRemaining = Math.max(0, goal.weeklyTarget - insights.recentCount);
@@ -142,6 +144,7 @@ export function HistoryRoute() {
           <div className="rounded-[22px] border border-emerald-200 bg-emerald-50/70 p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Next deliberate rep · {MODE_LABELS[recommendation.mode]}</p>
             <p className="mt-3 text-sm leading-6 text-slate-700">{recommendation.text}</p>
+            <p className="mt-3 text-xs leading-5 text-emerald-800"><span className="font-semibold">Why this:</span> {recommendation.reason}</p>
             {drillSummary.active ? (
               <p className="mt-3 text-xs font-medium text-emerald-800">Active drill: {MODE_LABELS[drillSummary.active.mode]} · started {formatDate(drillSummary.active.startedAt)}</p>
             ) : null}
@@ -149,6 +152,36 @@ export function HistoryRoute() {
           </div>
         </div>
       </MagicCard>
+
+      {activities.length > 0 ? (
+        <MagicCard className="p-6 md:p-8" hover={false}>
+          <MagicSectionHeader
+            eyebrow="Personal practice profile"
+            title={profile.recurringThemes.length > 0 ? 'Patterns worth another deliberate rep' : 'Your coaching patterns are taking shape'}
+            description="Built only from coaching notes saved in this browser. Themes show repetition, not a quality score or diagnosis."
+            right={<MagicBadge>{profile.coverage} / 3 modes explored</MagicBadge>}
+          />
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
+            {profile.topThemes.length > 0 ? profile.topThemes.map((theme) => (
+              <div key={theme.id} className="rounded-[22px] border border-slate-200 bg-white/75 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-semibold text-slate-950">{theme.label}</p>
+                  <MagicBadge>{theme.count} note{theme.count === 1 ? '' : 's'}</MagicBadge>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-500">
+                  {theme.count >= 2
+                    ? `This theme has repeated across ${theme.modes.length} practice mode${theme.modes.length === 1 ? '' : 's'}.`
+                    : 'One coaching note so far—another session will show whether it is a pattern.'}
+                </p>
+              </div>
+            )) : (
+              <div className="rounded-[22px] border border-dashed border-slate-200 p-5 text-sm leading-6 text-slate-500 md:col-span-3">
+                Complete sessions with coaching feedback to reveal recurring themes here.
+              </div>
+            )}
+          </div>
+        </MagicCard>
+      ) : null}
 
       {activities.length === 0 ? (
         <MagicCard className="p-8 text-center" hover={false}>

@@ -47,4 +47,18 @@ test('balanced focus recommends the least-practiced mode', () => {
 
   assert.equal(recommendation.mode, 'extempore');
   assert.equal(recommendation.source, 'practice-plan');
+  assert.match(recommendation.reason, /least-practiced/);
+});
+
+test('balanced recommendations prioritize a recurring coaching theme', () => {
+  const recommendation = buildNextPracticeRecommendation([
+    { id: '1', mode: 'interview', recommendation: 'Lead with a clear conclusion and stronger structure.' },
+    { id: '2', mode: 'interview', recommendation: 'Use a conclusion-first structure for the next answer.' },
+    { id: '3', mode: 'script', recommendation: 'Slow the pace in the final section.' }
+  ], { weeklyTarget: 3, focusMode: 'balanced' });
+
+  assert.equal(recommendation.mode, 'interview');
+  assert.equal(recommendation.theme.id, 'structure');
+  assert.equal(recommendation.evidenceCount, 2);
+  assert.match(recommendation.reason, /latest interview feedback/i);
 });
