@@ -1,6 +1,7 @@
 import { lazy } from 'react';
 import { Navigate, createRoute, createRootRoute, createRouter } from '@tanstack/react-router';
 import { AppShell } from './app/AppShell';
+import { RouteError } from './components/ui/RouteError';
 import { RouteSuspense } from './components/ui/RouteSuspense';
 
 const ScriptRoute = lazy(() => import('./features/script/ScriptRoute'));
@@ -79,5 +80,6 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
-  defaultPreload: 'intent'
+  defaultPreload: 'intent',
+  defaultErrorComponent: RouteError
 });
