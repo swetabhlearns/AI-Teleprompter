@@ -4,6 +4,7 @@ import { ArrowRight, ClockCounterClockwise, MagnifyingGlass, Trash } from '@phos
 import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader, MagicSelect } from '../../components/ui/MagicUI';
 import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
 import { buildNextPracticeRecommendation, loadPracticeGoal, savePracticeGoal } from '../../utils/practiceGoals';
+import { loadPracticeDrills, startPracticeDrill, summarizePracticeDrills } from '../../utils/practiceDrills';
 
 const MODE_LABELS = { script: 'Script', interview: 'Interview', extempore: 'Extempore' };
 const MODE_PATHS = { script: '/script', interview: '/interview', extempore: '/extempore' };
@@ -19,12 +20,14 @@ export function HistoryRoute() {
   const [query, setQuery] = useState('');
   const [modeFilter, setModeFilter] = useState('all');
   const [goal, setGoal] = useState(loadPracticeGoal);
+  const [drills, setDrills] = useState(loadPracticeDrills);
   const totals = useMemo(() => activities.reduce((result, item) => ({
     ...result,
     [item.mode]: (result[item.mode] || 0) + 1
   }), {}), [activities]);
   const insights = useMemo(() => summarizePracticeActivities(activities), [activities]);
   const recommendation = useMemo(() => buildNextPracticeRecommendation(activities, goal), [activities, goal]);
+  const drillSummary = useMemo(() => summarizePracticeDrills(drills), [drills]);
   const weeklyProgress = Math.min(100, Math.round((insights.recentCount / goal.weeklyTarget) * 100));
   const sessionsRemaining = Math.max(0, goal.weeklyTarget - insights.recentCount);
   const filteredActivities = useMemo(() => {
@@ -37,7 +40,10 @@ export function HistoryRoute() {
   }, [activities, modeFilter, query]);
 
   useEffect(() => {
-    const refresh = () => setActivities(loadPracticeActivities());
+    const refresh = () => {
+      setActivities(loadPracticeActivities());
+      setDrills(loadPracticeDrills());
+    };
     window.addEventListener(PRACTICE_HISTORY_EVENT, refresh);
     window.addEventListener('storage', refresh);
     return () => {
@@ -63,6 +69,12 @@ export function HistoryRoute() {
   const updateGoal = (patch) => {
     const next = savePracticeGoal({ ...goal, ...patch });
     setGoal(next);
+  };
+
+  const startRecommendedDrill = () => {
+    const drill = startPracticeDrill(recommendation);
+    if (drill) setDrills(loadPracticeDrills());
+    void navigate({ to: MODE_PATHS[recommendation.mode] });
   };
 
   return (
@@ -106,7 +118,7 @@ export function HistoryRoute() {
           eyebrow="Weekly practice goal"
           title={sessionsRemaining === 0 ? 'Goal reached—choose the next deliberate rep' : `${sessionsRemaining} session${sessionsRemaining === 1 ? '' : 's'} to go`}
           description="Progress is based on completed activities in the last seven days, not an artificial quality score."
-          right={<MagicBadge>{insights.recentCount} / {goal.weeklyTarget}</MagicBadge>}
+          right={<MagicBadge>{insights.recentCount} / {goal.weeklyTarget} · {drillSummary.completedCount} drills followed through</MagicBadge>}
         />
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`${weeklyProgress}% of weekly practice goal completed`}>
           <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${weeklyProgress}%` }} />
@@ -130,7 +142,10 @@ export function HistoryRoute() {
           <div className="rounded-[22px] border border-emerald-200 bg-emerald-50/70 p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Next deliberate rep · {MODE_LABELS[recommendation.mode]}</p>
             <p className="mt-3 text-sm leading-6 text-slate-700">{recommendation.text}</p>
-            <MagicButton className="mt-4 !min-h-10 !px-4 !py-2" onClick={() => navigate({ to: MODE_PATHS[recommendation.mode] })}>Start this drill <ArrowRight size={17} /></MagicButton>
+            {drillSummary.active ? (
+              <p className="mt-3 text-xs font-medium text-emerald-800">Active drill: {MODE_LABELS[drillSummary.active.mode]} · started {formatDate(drillSummary.active.startedAt)}</p>
+            ) : null}
+            <MagicButton className="mt-4 !min-h-10 !px-4 !py-2" onClick={startRecommendedDrill}>{drillSummary.active?.mode === recommendation.mode ? 'Continue this drill' : 'Start this drill'} <ArrowRight size={17} /></MagicButton>
           </div>
         </div>
       </MagicCard>

@@ -1,3 +1,5 @@
+import { completeMatchingPracticeDrill } from './practiceDrills.js';
+
 export const PRACTICE_HISTORY_STORAGE_KEY = 'ai-tracker.practice-history.v1';
 export const PRACTICE_HISTORY_EVENT = 'ai-tracker:practice-history-change';
 
@@ -30,6 +32,7 @@ export function savePracticeActivity(activity, storage) {
 
   try {
     target?.setItem(PRACTICE_HISTORY_STORAGE_KEY, JSON.stringify(next));
+    completeMatchingPracticeDrill(normalized, target);
     globalThis.dispatchEvent?.(new CustomEvent(PRACTICE_HISTORY_EVENT));
   } catch {
     return null;
