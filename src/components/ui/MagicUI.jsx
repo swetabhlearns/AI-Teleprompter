@@ -79,7 +79,7 @@ export const MagicButton = forwardRef(function MagicButton(
       ref={ref}
       type={Component === 'button' ? type : undefined}
       className={cn(
-        'inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold leading-none transition duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40',
+        'inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold leading-none transition duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40',
         variantClasses[variant] || variantClasses.primary,
         className,
       )}
@@ -127,9 +127,9 @@ export const MagicSelect = forwardRef(function MagicSelect({ className = '', ...
   );
 });
 
-export function MagicBadge({ children, className = '' }) {
+export function MagicBadge({ children, className = '', ...props }) {
   return (
-    <span className={cn('inline-flex min-h-[32px] items-center rounded-full border border-slate-200 bg-white/75 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600', className)}>
+    <span className={cn('inline-flex min-h-[32px] items-center rounded-full border border-slate-200 bg-white/75 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600', className)} {...props}>
       {children}
     </span>
   );
@@ -164,13 +164,15 @@ export function MagicDock({ children, className = '' }) {
   );
 }
 
-export function MagicDockLink({ to, active, children }) {
+export function MagicDockLink({ to, active, children, className = '' }) {
   return (
     <Link
       to={to}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'inline-flex min-h-[40px] items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium leading-none transition',
+        'inline-flex min-h-[40px] items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium leading-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:ring-offset-2',
         active ? 'bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.16)]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950',
+        className,
       )}
     >
       {children}
