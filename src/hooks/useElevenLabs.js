@@ -1,7 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-
-// ElevenLabs API configuration
-const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1';
+import { workerApi } from '../api/workerClient.js';
 
 // Rachel Voice ID (Free, pre-made voice)
 // See https://api.elevenlabs.io/v1/voices for list
@@ -12,9 +10,6 @@ export function useElevenLabs() {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [error, setError] = useState(null);
     const audioRef = useRef(null);
-
-    // Check if API key is available
-    const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
 
     // Cleanup audio on unmount
     useEffect(() => {
@@ -56,9 +51,9 @@ export function useElevenLabs() {
     const speak = useCallback(async (text, voiceId = RACHEL_VOICE_ID) => {
         if (!text) return;
 
-        // Fallback to Web Speech API if no API key or if quota exceeded (handled in catch)
-        if (!apiKey) {
-            console.warn('ElevenLabs API key not found. Falling back to browser TTS.');
+        // Fallback to Web Speech API if the Worker is unavailable or if TTS fails.
+        if (!workerApi.hasWorkerApi()) {
+            console.warn('Worker API not found for ElevenLabs TTS. Falling back to browser TTS.');
             fallbackSpeak(text);
             return;
         }
@@ -70,34 +65,17 @@ export function useElevenLabs() {
 
             // Use Turbo v2.5 for lowest latency, or Multilingual v2 for quality
             // Using Turbo v2.5 as it's best for interactive latency
-            const response = await fetch(`${ELEVENLABS_API_URL}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'xi-api-key': apiKey
+            const response = await workerApi.generateElevenLabsTts(voiceId, {
+                text,
+                model_id: 'eleven_turbo_v2_5',
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.75
                 },
-                body: JSON.stringify({
-                    text,
-                    model_id: 'eleven_turbo_v2_5',
-                    voice_settings: {
-                        stability: 0.5,
-                        similarity_boost: 0.75
-                    }
-                })
+                output_format: 'mp3_44100_128'
             });
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-
-                // specific handling for quota exceeded (status 401 or 403 often)
-                if (response.status === 401 || errorData?.detail?.status === 'quota_exceeded') {
-                    throw new Error('ElevenLabs quota exceeded or invalid key');
-                }
-
-                throw new Error(errorData?.detail?.message || 'Failed to generate speech');
-            }
-
-            const audioBlob = await response.blob();
+            const audioBlob = response;
             const audioUrl = URL.createObjectURL(audioBlob);
 
             const audio = new Audio(audioUrl);
@@ -127,7 +105,7 @@ export function useElevenLabs() {
             console.log('Falling back to browser TTS due to error...');
             fallbackSpeak(text);
         }
-    }, [apiKey, fallbackSpeak, stop]);
+    }, [fallbackSpeak, stop]);
 
     return {
         speak,
@@ -135,6 +113,6 @@ export function useElevenLabs() {
         isSpeaking,
         isLoading,
         error,
-        hasApiKey: !!apiKey
+        hasApiKey: workerApi.hasWorkerApi()
     };
 }

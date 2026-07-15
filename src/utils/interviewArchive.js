@@ -1,4 +1,5 @@
 import { openDB } from 'idb';
+import { workerApi } from '../api/workerClient.js';
 
 export const INTERVIEW_ARCHIVE_DB_NAME = 'ai-tracker-interview-archive';
 export const INTERVIEW_ARCHIVE_DB_VERSION = 1;
@@ -6,6 +7,23 @@ export const INTERVIEW_ARCHIVE_STORE = 'interview-sessions';
 export const INTERVIEW_ARCHIVE_VERSION = 1;
 
 let dbPromise;
+let archiveTransportMode = 'auto';
+
+function setLocalArchiveFallback() {
+    archiveTransportMode = 'local';
+}
+
+function shouldUseWorkerArchive() {
+    return archiveTransportMode !== 'local' && workerApi.hasWorkerApi();
+}
+
+function isWorkerArchiveAvailabilityError(error) {
+    const status = Number(error?.status || error?.statusCode || 0);
+    const message = String(error?.message || '').toLowerCase();
+
+    return status === 501
+        || /d1_error|overloaded|queued for too long|db_unavailable|not implemented/.test(message);
+}
 
 function nowIso() {
     return new Date().toISOString();
@@ -39,7 +57,7 @@ function sanitizeConfig(config = {}) {
     return {
         college: config.college || '',
         interviewType: config.interviewType || 'general',
-        interviewMode: config.interviewMode || 'groq',
+        interviewMode: config.interviewMode || 'live',
         duration: Number(config.duration) || 0,
         profile: sanitizeProfile(config.profile)
     };
@@ -188,7 +206,7 @@ function buildConversationTurn(session = {}, questionIndex = 0) {
         questionIndex,
         turnIndex: question?.turnIndex ?? answer?.turnIndex ?? evaluation?.turnIndex ?? existingTurn?.turnIndex ?? questionEvent?.turnIndex ?? answerEvent?.turnIndex ?? questionIndex,
         status: skipped ? 'skipped' : (answer || hasTranscript || existingTurn?.transcriptText || existingTurn?.transcript) ? 'answered' : 'pending',
-        mode: session.mode || session.config?.interviewMode || 'groq',
+        mode: session.mode || session.config?.interviewMode || 'live',
         askedAt,
         answeredAt,
         questionText: normalizePromptText(question?.text || questionEvent?.text || ''),
@@ -278,13 +296,13 @@ function buildInterviewSessionSummary(session = {}) {
         totalTranscriptWords,
         averageWordsPerAnswer: answeredTurns.length > 0 ? Math.round((totalTranscriptWords / answeredTurns.length) * 10) / 10 : 0,
         averageAnswerDuration: answeredTurns.length > 0 ? Math.round((totalDuration / answeredTurns.length) * 10) / 10 : 0,
-        mode: session.mode || session.config?.interviewMode || 'groq'
+        mode: session.mode || session.config?.interviewMode || 'live'
     };
 }
 
 export function createInterviewArchiveSession({
     id = generateArchiveId(),
-    mode = 'groq',
+    mode = 'live',
     config = {},
     questions = [],
     source = 'interview'
@@ -336,7 +354,7 @@ export function summarizeInterviewArchiveSession(session = {}) {
         id: session.id,
         version: session.version || INTERVIEW_ARCHIVE_VERSION,
         title: session.title || formatArchiveTitle(session.config || {}),
-        mode: session.mode || session.config?.interviewMode || 'groq',
+        mode: session.mode || session.config?.interviewMode || 'live',
         college: session.config?.college || '',
         interviewType: session.config?.interviewType || 'general',
         status: session.status || 'active',
@@ -372,6 +390,19 @@ async function getDb() {
 }
 
 export async function saveInterviewArchiveSession(session) {
+    if (shouldUseWorkerArchive()) {
+        try {
+            const payload = await workerApi.createInterviewSession(session);
+            return payload?.session || null;
+        } catch (error) {
+            if (isWorkerArchiveAvailabilityError(error)) {
+                setLocalArchiveFallback();
+            } else {
+                throw error;
+            }
+        }
+    }
+
     const db = await getDb();
     const next = {
         ...safeClone(session),
@@ -385,12 +416,38 @@ export async function saveInterviewArchiveSession(session) {
 export async function getInterviewArchiveSession(id) {
     if (!id) return null;
 
+    if (shouldUseWorkerArchive()) {
+        try {
+            const payload = await workerApi.getInterviewSession(id);
+            return payload?.session || null;
+        } catch (error) {
+            if (isWorkerArchiveAvailabilityError(error)) {
+                setLocalArchiveFallback();
+            } else {
+                throw error;
+            }
+        }
+    }
+
     const db = await getDb();
     const session = await db.get(INTERVIEW_ARCHIVE_STORE, id);
     return session ? safeClone(session) : null;
 }
 
 export async function listInterviewArchiveSessions() {
+    if (shouldUseWorkerArchive()) {
+        try {
+            const payload = await workerApi.listInterviewSessions();
+            return Array.isArray(payload?.sessions) ? payload.sessions : [];
+        } catch (error) {
+            if (isWorkerArchiveAvailabilityError(error)) {
+                setLocalArchiveFallback();
+            } else {
+                throw error;
+            }
+        }
+    }
+
     const db = await getDb();
     const sessions = await db.getAll(INTERVIEW_ARCHIVE_STORE);
 
@@ -404,6 +461,56 @@ export async function listInterviewArchiveSessions() {
 }
 
 async function updateInterviewArchiveSession(id, updater) {
+    if (shouldUseWorkerArchive()) {
+        let current = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+                current = await getInterviewArchiveSession(id);
+                if (current) {
+                    break;
+                }
+            } catch (error) {
+                if (isWorkerArchiveAvailabilityError(error)) {
+                    setLocalArchiveFallback();
+                    break;
+                }
+                throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+        }
+
+        if (!current) return null;
+
+        const next = typeof updater === 'function'
+            ? updater(safeClone(current))
+            : { ...safeClone(current), ...safeClone(updater) };
+
+        if (!next) {
+            return null;
+        }
+
+        let payload = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+                payload = await workerApi.updateInterviewSession(id, next);
+                if (payload?.session) {
+                    break;
+                }
+            } catch (error) {
+                if (isWorkerArchiveAvailabilityError(error)) {
+                    setLocalArchiveFallback();
+                    break;
+                }
+                if (attempt === 2) {
+                    throw error;
+                }
+            }
+            await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+        }
+
+        return payload?.session || null;
+    }
+
     const db = await getDb();
     const current = await db.get(INTERVIEW_ARCHIVE_STORE, id);
 
@@ -733,12 +840,35 @@ export async function failInterviewArchiveSession(sessionId, errorMessage = '', 
 export async function deleteInterviewArchiveSession(sessionId) {
     if (!sessionId) return false;
 
+    if (shouldUseWorkerArchive()) {
+        try {
+            await workerApi.deleteInterviewSession(sessionId);
+            return true;
+        } catch (error) {
+            if (!isWorkerArchiveAvailabilityError(error)) {
+                throw error;
+            }
+            setLocalArchiveFallback();
+        }
+    }
+
     const db = await getDb();
     await db.delete(INTERVIEW_ARCHIVE_STORE, sessionId);
     return true;
 }
 
 export async function exportInterviewArchiveSession(sessionId) {
+    if (shouldUseWorkerArchive()) {
+        try {
+            return await getInterviewArchiveSession(sessionId);
+        } catch (error) {
+            if (!isWorkerArchiveAvailabilityError(error)) {
+                throw error;
+            }
+            setLocalArchiveFallback();
+        }
+    }
+
     const session = await getInterviewArchiveSession(sessionId);
     if (!session) return null;
 

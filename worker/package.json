@@ -1,0 +1,12 @@
+{
+  "name": "ai-tracker-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "find src -name '*.js' -exec node --check {} \\;",
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy",
+    "deploy:staging": "npx wrangler deploy --env staging",
+    "logs": "npx wrangler tail"
+  }
+}

@@ -119,7 +119,7 @@ export function ExtemporeSpeakOnly({ selectedTopic = '', onChooseDifferentTopic 
                 <Microphone className="h-4 w-4" weight="fill" />
               </div>
               <span className="font-display text-xl font-bold tracking-[-0.03em]">
-                {isLive ? 'End speaking' : 'Start recording'}
+                {isLive ? 'End speaking' : 'Start speaking'}
               </span>
             </OatButton>
           </div>

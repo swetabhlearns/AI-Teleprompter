@@ -5,9 +5,13 @@ export const GEMINI_LIVE_RUNTIME_REGISTRY = Object.freeze([
         productLabel: GEMINI_LIVE_PRODUCT_LABEL,
         apiVersion: 'v1beta',
         capabilities: Object.freeze(['live', 'audio-input', 'audio-output', 'transcription']),
+        preferredNameMatchers: Object.freeze([
+            /^models\/gemini-3\.1-flash-live-preview$/i,
+            /^gemini-3\.1-flash-live-preview$/i
+        ]),
         displayNameMatchers: Object.freeze([
             /^gemini 3\.1 flash live preview$/i,
-            /^gemini 3\.1 flash live(?: preview)?$/i
+            /^gemini 3\.1 flash live$/i
         ]),
         nameMatchers: Object.freeze([
             /^models\/gemini-3\.1-flash-live-preview(?:[-\w]*)?$/i,
@@ -51,6 +55,19 @@ function normalizeText(value) {
 
 function normalizeLowerText(value) {
     return normalizeText(value).toLowerCase();
+}
+
+function getServerContent(message) {
+    return message?.serverContent
+        || message?.raw?.serverContent
+        || message?.raw?.server_content
+        || message?.server_content
+        || null;
+}
+
+function getModelTurn(message) {
+    const serverContent = getServerContent(message);
+    return serverContent?.modelTurn || serverContent?.model_turn || null;
 }
 
 export function describeGeminiLiveTurnState(state) {
@@ -225,7 +242,7 @@ export function buildGeminiLiveRealtimeText(turn = {}, previousTurn = null) {
 export function extractLiveText(message) {
     if (!message) return '';
 
-    const parts = message.serverContent?.modelTurn?.parts || [];
+    const parts = getModelTurn(message)?.parts || [];
     const text = parts
         .map((part) => part?.text || '')
         .filter(Boolean)
@@ -238,10 +255,11 @@ export function extractLiveText(message) {
 export function extractLiveTranscript(message) {
     if (!message) return '';
 
-    const inputText = message.serverContent?.inputTranscription?.text?.trim();
+    const serverContent = getServerContent(message);
+    const inputText = serverContent?.inputTranscription?.text?.trim();
     if (inputText) return inputText;
 
-    const outputText = message.serverContent?.outputTranscription?.text?.trim();
+    const outputText = serverContent?.outputTranscription?.text?.trim();
     if (outputText) return outputText;
 
     return '';
@@ -250,23 +268,24 @@ export function extractLiveTranscript(message) {
 export function extractLiveInputTranscript(message) {
     if (!message) return '';
 
-    return message.serverContent?.inputTranscription?.text?.trim() || '';
+    return getServerContent(message)?.inputTranscription?.text?.trim() || '';
 }
 
 export function extractLiveOutputTranscript(message) {
     if (!message) return '';
 
-    return message.serverContent?.outputTranscription?.text?.trim() || '';
+    return getServerContent(message)?.outputTranscription?.text?.trim() || '';
 }
 
 export function isLiveTurnComplete(message) {
+    const serverContent = getServerContent(message);
     return Boolean(
-        message?.serverContent?.turnComplete ||
-        message?.serverContent?.generationComplete ||
-        message?.serverContent?.waitingForInput
+        serverContent?.turnComplete ||
+        serverContent?.generationComplete ||
+        serverContent?.waitingForInput
     );
 }
 
 export function isLiveInterrupted(message) {
-    return Boolean(message?.serverContent?.interrupted);
+    return Boolean(getServerContent(message)?.interrupted);
 }

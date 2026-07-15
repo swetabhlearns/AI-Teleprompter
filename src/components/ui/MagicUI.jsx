@@ -52,7 +52,7 @@ export const MagicCard = forwardRef(function MagicCard(
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(15,118,110,0.08),_transparent_38%)]" />
       </div>
-      <div className="relative">{children}</div>
+      <div className="relative flex h-full min-h-0 flex-1 flex-col">{children}</div>
     </MotionDiv>
   );
 });

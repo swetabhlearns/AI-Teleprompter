@@ -8,6 +8,8 @@
     "build": "vite build",
     "test": "node --test",
     "lint": "eslint .",
+    "check:worker": "npm --prefix worker run check",
+    "check": "npm run test && npm run lint && npm run build && npm run check:worker",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -26,7 +28,6 @@
     "groq-sdk": "^0.37.0",
     "idb": "^8.0.3",
     "kokoro-js": "^1.2.1",
-    "posthog-js": "^1.334.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.1.18",

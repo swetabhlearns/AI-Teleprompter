@@ -5,6 +5,7 @@ import {
   createInterviewArchiveSession,
   summarizeInterviewArchiveSession
 } from '../src/utils/interviewArchive.js';
+import { saveInterviewSession } from '../worker/src/lib/db.js';
 
 test('buildInterviewReplayTurns merges question, answer, and evaluation into a replay timeline', () => {
   const session = createInterviewArchiveSession({
@@ -153,4 +154,52 @@ test('summarizeInterviewArchiveSession reflects completed sessions cleanly', () 
   assert.equal(summary.turnCount, 1);
   assert.equal(summary.answerCount, 1);
   assert.equal(summary.averageScore, 8);
+});
+
+test('saveInterviewSession preserves the final analysis transcript in raw_json', async () => {
+  let boundValues = [];
+  const env = {
+    DB: {
+      prepare() {
+        return {
+          bind(...values) {
+            boundValues = values;
+            return {
+              run: async () => ({ success: true })
+            };
+          }
+        };
+      }
+    }
+  };
+
+  await saveInterviewSession(env, {
+    id: 'session-1',
+    title: 'Candidate · School',
+    mode: 'live',
+    source: 'interview',
+    status: 'completed',
+    createdAt: '2026-04-21T09:00:00.000Z',
+    updatedAt: '2026-04-21T09:10:00.000Z',
+    config: {
+      college: 'IIM Ahmedabad',
+      interviewType: 'general',
+      interviewMode: 'live'
+    },
+    liveDiagnostics: {
+      analysisStatus: 'completed',
+      analysisTranscript: 'Overall strong fit with clear strengths.'
+    },
+    sessionSummary: {
+      analysisStatus: 'completed'
+    },
+    raw: {
+      analysisTranscript: 'Overall strong fit with clear strengths.',
+      analysisCompletedAt: '2026-04-21T09:10:00.000Z'
+    }
+  });
+
+  const rawJson = JSON.parse(boundValues.at(-1));
+  assert.equal(rawJson.analysisTranscript, 'Overall strong fit with clear strengths.');
+  assert.equal(rawJson.analysisCompletedAt, '2026-04-21T09:10:00.000Z');
 });

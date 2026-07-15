@@ -301,8 +301,7 @@ export function generateDeliveryRoadmapPrompt({
   targetDuration,
   difficulty = 'medium',
   currentScript = '',
-  mode = 'generate',
-  useCurrentData = false
+  mode = 'generate'
 }) {
   const durationMinutes = Math.max(1, Math.round(targetDuration / 60));
   const wordBudget = Math.round((targetDuration / 60) * (difficulty === 'easy' ? 90 : difficulty === 'hard' ? 130 : 110));
@@ -313,10 +312,6 @@ export function generateDeliveryRoadmapPrompt({
 
   const scriptContext = currentScript
     ? `\nCurrent script:\n${currentScript}`
-    : '';
-
-  const currentDataLine = useCurrentData
-    ? '\nIf relevant, incorporate up-to-date details from current context, but keep the script clean and speakable.'
     : '';
 
   return `${base}
@@ -345,7 +340,7 @@ Output rules:
 - Keep the section headers visible in the script
 - Do not explain the markup
 - Do not use bullet lists unless they belong in the speech itself
-- Preserve a calm, high-trust coaching voice${currentDataLine}${scriptContext}`;
+  - Preserve a calm, high-trust coaching voice${scriptContext}`;
 }
 
 export function generateScriptPrompt(topic, tone, targetDuration) {

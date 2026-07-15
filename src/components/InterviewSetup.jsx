@@ -1,5 +1,13 @@
 import InterviewArchiveBrowser from './InterviewArchiveBrowser';
-import { OatButton, OatCard, OatInput, OatTextarea } from './ui/OatComponents';
+import {
+    MagicBadge,
+    MagicButton,
+    MagicCard,
+    MagicField,
+    MagicInput,
+    MagicSectionHeader,
+    MagicTextarea
+} from './ui/MagicUI';
 
 /**
  * Interview Setup Component
@@ -9,9 +17,7 @@ export function InterviewSetup({
     config,
     setConfig,
     onStartInterview,
-    onModeChange,
     isLoading,
-    ttsStatus,
     liveStatus,
     archiveSessions = [],
     archiveLoading = false,
@@ -20,6 +26,20 @@ export function InterviewSetup({
     onExportArchive,
     onDeleteArchive
 }) {
+    const demoConfig = {
+        college: 'IIM Bangalore',
+        interviewType: 'general',
+        duration: 10,
+        profile: {
+            name: 'Shiv',
+            background: 'Aspiring MBA candidate with a strong interest in product strategy and technology-led growth.',
+            workExperience: '3 years as a software engineer at a mid-sized SaaS company',
+            education: 'B.Tech in Computer Science',
+            hobbies: 'Coding, cycling, cricket, reading non-fiction',
+            whyMba: 'To transition into product management and build leadership skills for scaling impactful products.'
+        }
+    };
+
     const colleges = [
         { id: 'iim-a', name: 'IIM Ahmedabad', short: 'IIM-A' },
         { id: 'iim-b', name: 'IIM Bangalore', short: 'IIM-B' },
@@ -50,20 +70,6 @@ export function InterviewSetup({
         { value: 20, label: '20 min', desc: 'Full simulation' }
     ];
 
-    const modes = [
-        {
-            id: 'live',
-            name: 'Gemini 3.1 Flash Live',
-            desc: 'Real-time interviewer with the strict Gemini 3.1 Flash Live flow',
-            badge: 'Recommended'
-        },
-        {
-            id: 'groq',
-            name: 'Classic Groq',
-            desc: 'Current interview flow with fallback transcription'
-        }
-    ];
-
     const updateProfile = (field, value) => {
         setConfig(prev => ({
             ...prev,
@@ -71,296 +77,213 @@ export function InterviewSetup({
         }));
     };
 
+    const applyDemoData = () => {
+        setConfig((prev) => ({
+            ...prev,
+            ...demoConfig,
+            profile: {
+                ...prev.profile,
+                ...demoConfig.profile
+            }
+        }));
+    };
+
     const isProfileComplete = config.college && config.profile.name;
 
     return (
-        <div className="flex h-full flex-col gap-6 overflow-auto text-text">
-            {/* Header */}
-            <OatCard className="refined-card">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <h2 className="font-display mb-2 flex items-center gap-3 text-2xl font-semibold tracking-[-0.03em] text-text">
-                            <span style={{ fontSize: '32px' }}>🎤</span>
-                            Mock Interview Setup
-                        </h2>
-                        <p className="text-sm text-on-surface-variant">
-                            Configure your practice session for MBA admission interviews
-                        </p>
-                    </div>
-
-                    {config.interviewMode === 'live' ? (
-                        <div className="refined-chip flex items-center gap-2">
-                            {liveStatus?.modelStatus === 'checking' ? (
-                                <>
-                                    <div className="spinner h-3 w-3 border-2" />
-                                    Resolving Gemini 3.1 Flash Live...
-                                </>
-                            ) : liveStatus?.isConnecting ? (
-                                <>
-                                    <div className="spinner h-3 w-3 border-2" />
-                                    Connecting Gemini 3.1 Flash Live...
-                                </>
-                            ) : liveStatus?.isConnected ? (
-                                <>
-                                    <div className="size-2 rounded-full bg-success" />
-                                    Gemini 3.1 Flash Live connected
-                                </>
-                            ) : liveStatus?.error ? (
-                                <>
-                                    <div className="size-2 rounded-full bg-danger" />
-                                    Gemini 3.1 Flash Live unavailable
-                                </>
-                            ) : (
-                                <>
-                                    <div className="size-2 rounded-full bg-warning" />
-                                    Gemini 3.1 Flash Live ready
-                                </>
-                            )}
-                        </div>
-                    ) : ttsStatus && (
-                        <div className="refined-chip flex items-center gap-2">
-                            {ttsStatus.isLoading ? (
-                                <>
-                                    <div className="spinner h-3 w-3 border-2" />
-                                    Loading AI Voice...
-                                </>
-                            ) : ttsStatus.isReady ? (
-                                <>
-                                    <div className="size-2 rounded-full bg-success" />
-                                    {ttsStatus.usesFallback ? 'Voice Ready (Basic)' : 'AI Voice Ready ✨'}
-                                </>
-                            ) : (
-                                <>
-                                    <div className="size-2 rounded-full bg-warning" />
-                                    Voice Limited
-                                </>
-                            )}
-                        </div>
+        <div className="flex h-full flex-col gap-6 overflow-auto text-slate-950">
+            <MagicCard className="p-5 md:p-6">
+                <MagicSectionHeader
+                    eyebrow="Admissions Simulation"
+                    title="Interview setup"
+                    description="Configure a realistic MBA admissions interview with Gemini. The candidate profile remains context, not the full agenda."
+                    right={(
+                        <MagicBadge className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                            {liveStatus?.modelStatus === 'checking'
+                                ? 'Resolving Gemini Live...'
+                                : liveStatus?.isConnecting
+                                    ? 'Connecting...'
+                                    : liveStatus?.isConnected
+                                        ? 'Gemini Live ready'
+                                        : liveStatus?.error
+                                            ? 'Gemini Live unavailable'
+                                            : 'Gemini Live idle'}
+                        </MagicBadge>
                     )}
-                </div>
-                {config.interviewMode === 'live' && liveStatus?.error && (
-                    <div className="mt-3 rounded-[18px] border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+                />
+                {liveStatus?.error && (
+                    <div className="mt-4 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                         {liveStatus.error}
                     </div>
                 )}
-                <div className="mt-4 rounded-[20px] border border-outline-variant bg-surface-container-low p-3">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
-                        Interview Mode
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                        {modes.map((mode) => (
-                            <OatButton
-                                key={mode.id}
-                                type="button"
-                                onClick={() => {
-                                    setConfig((prev) => ({ ...prev, interviewMode: mode.id }));
-                                    onModeChange?.(mode.id);
-                                }}
-                                className={`rounded-[18px] border px-3 py-3 text-left transition ${
-                                  config.interviewMode === mode.id
-                                    ? 'border-primary-container bg-primary-container/10'
-                                    : 'border-outline-variant bg-surface hover:bg-surface-container-low'
-                                }`}
-                            >
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="text-sm font-semibold text-text">{mode.name}</div>
-                                    {mode.badge && (
-                                        <span className="refined-chip">{mode.badge}</span>
-                                    )}
-                                </div>
-                                <div className="mt-1 text-xs text-on-surface-variant">{mode.desc}</div>
-                            </OatButton>
-                        ))}
-                    </div>
-                </div>
-            </OatCard>
+            </MagicCard>
 
-            {/* Main Content */}
             <div className="grid flex-1 grid-cols-1 gap-6 overflow-auto lg:grid-cols-2">
-                {/* Left Panel - College & Type */}
-                <OatCard className="refined-card flex flex-col gap-6">
-                    {/* College Selection */}
+                <MagicCard className="flex flex-col gap-6 p-5 md:p-6">
+                    <MagicSectionHeader
+                        eyebrow="Interview Context"
+                        title="Select school and format"
+                        description="Choose the target school, interview style, and duration for the session."
+                    />
+
                     <div>
-                        <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
-                            🏛️ Select College
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {colleges.map(college => (
-                                <OatButton
-                                    key={college.id}
-                                    onClick={() => setConfig(prev => ({ ...prev, college: college.name }))}
-                                className={`rounded-[18px] border px-3 py-3 text-xs font-semibold transition ${config.college === college.name
-                                        ? 'border-primary-container bg-primary-container text-on-primary-container'
-                                        : 'border-outline-variant bg-surface text-text hover:bg-surface-container-low'
-                                        }`}
-                                >
-                                    {college.short}
-                                </OatButton>
-                            ))}
+                        <MagicBadge className="mb-3">Target School</MagicBadge>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {colleges.map((college) => {
+                                const active = config.college === college.name;
+                                return (
+                                    <MagicButton
+                                        key={college.id}
+                                        type="button"
+                                        variant={active ? 'primary' : 'secondary'}
+                                        onClick={() => setConfig((prev) => ({ ...prev, college: college.name }))}
+                                        className="!min-h-11 !rounded-[18px] !px-3 !py-3 text-xs"
+                                    >
+                                        {college.short}
+                                    </MagicButton>
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Interview Type */}
                     <div>
-                        <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
-                            📋 Interview Type
-                        </label>
+                        <MagicBadge className="mb-3">Interview Type</MagicBadge>
                         <div className="flex flex-col gap-2">
-                            {interviewTypes.map(type => (
-                                <OatButton
-                                    key={type.id}
-                                    onClick={() => setConfig(prev => ({ ...prev, interviewType: type.id }))}
-                                className={`flex items-center gap-3 rounded-[18px] border px-4 py-4 text-left transition ${config.interviewType === type.id
-                                        ? 'border-primary-container bg-surface-container-low'
-                                        : 'border-outline-variant bg-surface hover:bg-surface-container-low'
-                                        }`}
-                                >
-                                    <span style={{ fontSize: '20px' }}>{type.icon}</span>
-                                    <div>
-                                        <div className="text-sm font-semibold text-text">{type.name}</div>
-                                        <div className="text-xs text-on-surface-variant">{type.desc}</div>
-                                    </div>
-                                </OatButton>
-                            ))}
+                            {interviewTypes.map((type) => {
+                                const active = config.interviewType === type.id;
+                                return (
+                                    <MagicButton
+                                        key={type.id}
+                                        type="button"
+                                        variant={active ? 'primary' : 'secondary'}
+                                        onClick={() => setConfig((prev) => ({ ...prev, interviewType: type.id }))}
+                                        className="!h-auto !min-h-0 !items-start !justify-start !rounded-[22px] !px-4 !py-4 text-left"
+                                    >
+                                        <span className="flex flex-col items-start gap-1">
+                                            <span className="text-sm font-semibold">{type.name}</span>
+                                            <span className="text-xs font-normal opacity-80">{type.desc}</span>
+                                        </span>
+                                    </MagicButton>
+                                );
+                            })}
                         </div>
                     </div>
 
-                    {/* Duration */}
                     <div>
-                        <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
-                            ⏱️ Duration
-                        </label>
-                        <div className="flex gap-2">
-                            {durations.map(d => (
-                                <OatButton
-                                    key={d.value}
-                                    onClick={() => setConfig(prev => ({ ...prev, duration: d.value }))}
-                                className={`flex-1 rounded-[18px] border px-3 py-3 text-center transition ${config.duration === d.value
-                                        ? 'border-primary-container bg-surface-container-low text-text'
-                                        : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-low'
-                                        }`}
-                                >
-                                    <div className="text-sm font-semibold text-text">{d.label}</div>
-                                    <div className="text-[10px] text-on-surface-variant">{d.desc}</div>
-                                </OatButton>
-                            ))}
+                        <MagicBadge className="mb-3">Duration</MagicBadge>
+                        <div className="flex flex-wrap gap-2">
+                            {durations.map((durationOption) => {
+                                const active = config.duration === durationOption.value;
+                                return (
+                                    <MagicButton
+                                        key={durationOption.value}
+                                        type="button"
+                                        variant={active ? 'primary' : 'secondary'}
+                                        onClick={() => setConfig((prev) => ({ ...prev, duration: durationOption.value }))}
+                                        className="!min-h-11 !flex-1 !flex-col !rounded-[18px] !px-4 !py-3"
+                                    >
+                                        <span className="text-sm font-semibold">{durationOption.label}</span>
+                                        <span className="text-[10px] font-normal opacity-80">{durationOption.desc}</span>
+                                    </MagicButton>
+                                );
+                            })}
                         </div>
                     </div>
-                </OatCard>
+                </MagicCard>
 
-                {/* Right Panel - Profile */}
-                <OatCard className="refined-card flex flex-col gap-4">
-                    <div>
-                        <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.05em] text-on-surface-variant">
-                            👤 Your Profile
-                        </label>
-                        <p className="mb-4 text-xs text-on-surface-variant">
-                            This helps generate personalized questions
-                        </p>
-                    </div>
+                <MagicCard className="flex flex-col gap-4 p-5 md:p-6">
+                <MagicSectionHeader
+                    eyebrow="Candidate Context"
+                    title="Background summary"
+                    description="This is supporting context for Gemini and should guide personalization without dominating the interview."
+                    right={(
+                        <MagicButton
+                            type="button"
+                            variant="secondary"
+                            onClick={applyDemoData}
+                            className="!rounded-[16px] !px-4 !py-2 text-xs"
+                        >
+                            Load demo data
+                        </MagicButton>
+                    )}
+                />
 
-                    <div>
-                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
-                            Name *
-                        </label>
-                        <OatInput
+                    <MagicField label="Name *" hint="Used to personalize the interview">
+                        <MagicInput
                             type="text"
                             value={config.profile.name}
                             onChange={(e) => updateProfile('name', e.target.value)}
                             placeholder="Your name"
-                            className="input"
                         />
-                    </div>
+                    </MagicField>
 
-                    <div>
-                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
-                            Work Experience
-                        </label>
-                        <OatInput
+                    <MagicField label="Work Experience" hint="A short summary of your current or recent role">
+                        <MagicInput
                             type="text"
                             value={config.profile.workExperience}
                             onChange={(e) => updateProfile('workExperience', e.target.value)}
                             placeholder="e.g., 3 years at TCS as Software Engineer"
-                            className="input"
                         />
-                    </div>
+                    </MagicField>
 
-                    <div>
-                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
-                            Education Background
-                        </label>
-                        <OatInput
+                    <MagicField label="Education Background" hint="Degree, school, or other relevant education">
+                        <MagicInput
                             type="text"
                             value={config.profile.education}
                             onChange={(e) => updateProfile('education', e.target.value)}
                             placeholder="e.g., B.Tech in Computer Science from IIT Delhi"
-                            className="input"
                         />
-                    </div>
+                    </MagicField>
 
-                    <div>
-                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
-                            Hobbies / Interests
-                        </label>
-                        <OatInput
+                    <MagicField label="Hobbies / Interests" hint="Optional context for natural conversation">
+                        <MagicInput
                             type="text"
                             value={config.profile.hobbies}
                             onChange={(e) => updateProfile('hobbies', e.target.value)}
                             placeholder="e.g., Cricket, Reading, Trekking"
-                            className="input"
                         />
-                    </div>
+                    </MagicField>
 
-                    <div>
-                        <label className="mb-2 block text-xs uppercase tracking-[0.05em] text-on-surface-variant">
-                            Why MBA?
-                        </label>
-                        <OatTextarea
+                    <MagicField label="Why MBA?" hint="Use this to probe motivation and goals">
+                        <MagicTextarea
                             value={config.profile.whyMba}
                             onChange={(e) => updateProfile('whyMba', e.target.value)}
                             placeholder="Brief reason for pursuing MBA..."
-                            className="textarea"
+                            className="min-h-[160px]"
                         />
-                    </div>
-                </OatCard>
+                    </MagicField>
+                </MagicCard>
             </div>
 
-            {/* Start Button */}
-            <OatCard className="refined-card">
-                <div className="flex items-center justify-between gap-4">
-                        <div className="text-sm text-on-surface-variant">
-                            {config.college ? (
+            <MagicCard className="p-5 md:p-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="text-sm text-slate-600">
+                        {config.college ? (
                             <span>
-                                🏛️ {config.college} • ⏱️ {config.duration} min •
-                                📋 {interviewTypes.find(t => t.id === config.interviewType)?.name} •
-                                ⚡ {config.interviewMode === 'live' ? 'Gemini 3.1 Flash Live' : 'Groq'}
+                                {config.college} • {config.duration} min • {interviewTypes.find((t) => t.id === config.interviewType)?.name} • Gemini Live
                             </span>
                         ) : (
                             <span>Select a college to begin</span>
                         )}
                     </div>
 
-                    <OatButton
+                    <MagicButton
                         onClick={onStartInterview}
-                        disabled={!isProfileComplete || isLoading || (config.interviewMode === 'live' && (!liveStatus?.isReady || Boolean(liveStatus?.error)))}
-                        className="px-8 py-3 text-base"
+                        disabled={!isProfileComplete || isLoading || (!liveStatus?.isReady || Boolean(liveStatus?.error))}
+                        variant="primary"
+                        className="!min-w-[180px] !px-8 !py-3 text-base"
                     >
                         {isLoading ? (
                             <span className="flex items-center gap-2">
                                 <div className="spinner h-[18px] w-[18px] border-2" />
-                                Preparing Questions...
-                            </span>
-                        ) : config.interviewMode === 'live' && (!liveStatus?.isReady || Boolean(liveStatus?.error)) ? (
-                            <span className="flex items-center gap-2">
-                                <div className="size-2 rounded-full bg-danger" />
-                                Gemini 3.1 Flash Live unavailable
+                                Preparing interview...
                             </span>
                         ) : (
-                            <span>🎬 Start Interview</span>
+                            <span>Begin Interview</span>
                         )}
-                    </OatButton>
+                    </MagicButton>
                 </div>
-            </OatCard>
+            </MagicCard>
 
             <InterviewArchiveBrowser
                 sessions={archiveSessions}
