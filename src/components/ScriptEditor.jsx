@@ -126,6 +126,7 @@ export function ScriptEditor({
       mode: 'script',
       title,
       summary: `${wordCount} words saved for teleprompter practice.`,
+      recommendation: 'Rehearse this script once for pacing, then refine the two least natural sentences.',
       actionLabel: 'Open library',
       occurredAt: newScript.createdAt
     });

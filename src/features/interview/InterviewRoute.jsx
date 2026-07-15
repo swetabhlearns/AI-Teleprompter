@@ -12,6 +12,7 @@ import { GEMINI_LIVE_TURN_STATES } from '../../utils/geminiLive';
 import { workerApi } from '../../api/workerClient';
 import { MagicBackground, MagicButton, MagicCard } from '../../components/ui/MagicUI';
 import { savePracticeActivity } from '../../utils/practiceHistory';
+import { parseInterviewAnalysisSections } from '../../utils/interviewArchive';
 
 export function InterviewRoute() {
   const navigate = useNavigate();
@@ -156,12 +157,16 @@ export function InterviewRoute() {
       || completedSession?.conversationTimeline?.length
       || completedSession?.answers?.length
       || 0;
+    const analysisText = String(completedSession?.raw?.analysisTranscript || completedSession?.liveDiagnostics?.analysisTranscript || '');
+    const recommendation = parseInterviewAnalysisSections(analysisText)
+      .find((section) => /recommend|next|follow-up/i.test(section.title))?.body || '';
     savePracticeActivity({
       id: `interview:${completedSession.id}`,
       mode: 'interview',
       title: completedSession.title || `${completedSession?.config?.college || 'MBA'} interview`,
       referenceId: completedSession.id,
       summary: `${turnCount} conversation turns reviewed. Coaching report is available in the interview archive.`,
+      recommendation,
       actionLabel: 'Open report archive',
       occurredAt: completedSession.completedAt || completedSession.updatedAt
     });

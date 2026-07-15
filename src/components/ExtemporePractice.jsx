@@ -752,6 +752,7 @@ function ExtemporePractice({
       mode: 'extempore',
       title: currentTopic || 'Extempore practice',
       summary: summary?.recommendedDrill || `${Math.round(durationMs / 1000)} seconds of speaking practice completed.`,
+      recommendation: summary?.recommendedDrill || '',
       actionLabel: 'Practice another topic'
     });
 

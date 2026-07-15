@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { ArrowRight, ClockCounterClockwise, MagnifyingGlass, Trash } from '@phosphor-icons/react';
-import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader } from '../../components/ui/MagicUI';
+import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader, MagicSelect } from '../../components/ui/MagicUI';
 import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
+import { buildNextPracticeRecommendation, loadPracticeGoal, savePracticeGoal } from '../../utils/practiceGoals';
 
 const MODE_LABELS = { script: 'Script', interview: 'Interview', extempore: 'Extempore' };
 const MODE_PATHS = { script: '/script', interview: '/interview', extempore: '/extempore' };
@@ -17,11 +18,15 @@ export function HistoryRoute() {
   const [activities, setActivities] = useState(loadPracticeActivities);
   const [query, setQuery] = useState('');
   const [modeFilter, setModeFilter] = useState('all');
+  const [goal, setGoal] = useState(loadPracticeGoal);
   const totals = useMemo(() => activities.reduce((result, item) => ({
     ...result,
     [item.mode]: (result[item.mode] || 0) + 1
   }), {}), [activities]);
   const insights = useMemo(() => summarizePracticeActivities(activities), [activities]);
+  const recommendation = useMemo(() => buildNextPracticeRecommendation(activities, goal), [activities, goal]);
+  const weeklyProgress = Math.min(100, Math.round((insights.recentCount / goal.weeklyTarget) * 100));
+  const sessionsRemaining = Math.max(0, goal.weeklyTarget - insights.recentCount);
   const filteredActivities = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return activities.filter((activity) => {
@@ -53,6 +58,11 @@ export function HistoryRoute() {
       return;
     }
     void navigate({ to: MODE_PATHS[activity.mode] || '/' });
+  };
+
+  const updateGoal = (patch) => {
+    const next = savePracticeGoal({ ...goal, ...patch });
+    setGoal(next);
   };
 
   return (
@@ -89,6 +99,40 @@ export function HistoryRoute() {
             </div>
           </div>
         ) : null}
+      </MagicCard>
+
+      <MagicCard className="p-6 md:p-8" hover={false}>
+        <MagicSectionHeader
+          eyebrow="Weekly practice goal"
+          title={sessionsRemaining === 0 ? 'Goal reached—choose the next deliberate rep' : `${sessionsRemaining} session${sessionsRemaining === 1 ? '' : 's'} to go`}
+          description="Progress is based on completed activities in the last seven days, not an artificial quality score."
+          right={<MagicBadge>{insights.recentCount} / {goal.weeklyTarget}</MagicBadge>}
+        />
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`${weeklyProgress}% of weekly practice goal completed`}>
+          <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${weeklyProgress}%` }} />
+        </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-[0.7fr_0.7fr_1.6fr]">
+          <label className="text-sm font-medium text-slate-700">
+            Sessions per week
+            <MagicSelect className="mt-2" value={String(goal.weeklyTarget)} onChange={(event) => updateGoal({ weeklyTarget: Number(event.target.value) })}>
+              {[1, 2, 3, 4, 5, 6, 7].map((value) => <option key={value} value={value}>{value}</option>)}
+            </MagicSelect>
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Focus
+            <MagicSelect className="mt-2" value={goal.focusMode} onChange={(event) => updateGoal({ focusMode: event.target.value })}>
+              <option value="balanced">Balanced</option>
+              <option value="script">Script</option>
+              <option value="interview">Interview</option>
+              <option value="extempore">Extempore</option>
+            </MagicSelect>
+          </label>
+          <div className="rounded-[22px] border border-emerald-200 bg-emerald-50/70 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Next deliberate rep · {MODE_LABELS[recommendation.mode]}</p>
+            <p className="mt-3 text-sm leading-6 text-slate-700">{recommendation.text}</p>
+            <MagicButton className="mt-4 !min-h-10 !px-4 !py-2" onClick={() => navigate({ to: MODE_PATHS[recommendation.mode] })}>Start this drill <ArrowRight size={17} /></MagicButton>
+          </div>
+        </div>
       </MagicCard>
 
       {activities.length === 0 ? (
