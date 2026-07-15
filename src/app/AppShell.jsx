@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useAppStore } from '../stores/appStore';
 import { workerApi } from '../api/workerClient.js';
+import { OnboardingDialog } from '../components/OnboardingDialog';
+import { shouldShowOnboarding } from '../utils/onboarding';
 import {
   MagicBackground,
   MagicDock,
@@ -17,6 +19,8 @@ const PRIMARY_NAV_ITEMS = [
 ];
 
 export function AppShell() {
+  const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
+  const closeOnboarding = useCallback(() => setShowOnboarding(false), []);
   const pathname = useRouterState({
     select: (state) => state.location.pathname
   });
@@ -139,6 +143,7 @@ export function AppShell() {
             ))}
           </nav>
         </MagicDock>
+        {showOnboarding ? <OnboardingDialog onClose={closeOnboarding} /> : null}
       </div>
     </MagicBackground>
   );
