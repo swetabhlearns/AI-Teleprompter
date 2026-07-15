@@ -1,23 +1,18 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState, startTransition } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { usePostHog } from 'posthog-js/react';
 import InterviewSetup from '../../components/InterviewSetup';
 import InterviewSession from '../../components/InterviewSession';
-import { OatButton, OatCard } from '../../components/ui/OatComponents';
-import { useRecorder } from '../../hooks/useRecorder';
 import { useGroq } from '../../hooks/useGroq';
 import { useInterview, INTERVIEW_STATES } from '../../hooks/useInterview';
 import { useInterviewArchive } from '../../hooks/useInterviewArchive';
-import { useKokoroTTS } from '../../hooks/useKokoroTTS';
 import { useGeminiLive } from '../../hooks/useGeminiLive';
-import { useInterviewUiStore } from '../../stores/interviewUiStore';
 import { GEMINI_LIVE_TURN_STATES } from '../../utils/geminiLive';
+import { workerApi } from '../../api/workerClient';
+import { MagicBackground, MagicButton, MagicCard } from '../../components/ui/MagicUI';
 
 export function InterviewRoute() {
   const navigate = useNavigate();
-  const posthog = usePostHog();
-  const interviewMode = useInterviewUiStore((state) => state.interviewMode);
-  const setInterviewMode = useInterviewUiStore((state) => state.setInterviewMode);
+  const interviewMode = 'live';
 
   const liveCaptureRef = useRef(null);
   const liveCaptureActiveRef = useRef(false);
@@ -28,18 +23,16 @@ export function InterviewRoute() {
   const geminiTransitionHandledRef = useRef('');
   const archivedSessionFinalizedRef = useRef(null);
   const archivedSessionFailedRef = useRef(null);
+  const analysisRequestSentRef = useRef(false);
+  const [analysisState, setAnalysisState] = useState('idle');
 
-  const { transcribeAudio, generateInterviewQuestions, evaluateAnswer, isLoading: isTranscribing } = useGroq();
-  const interviewArchive = useInterviewArchive();
-  const kokoroTTS = useKokoroTTS({ enabled: interviewMode !== 'live' });
+  const { transcribeAudio, isLoading: isTranscribing } = useGroq();
   const geminiLive = useGeminiLive();
-  const useLiveInterview = interviewMode === 'live';
-  const { startRecording, stopRecording } = useRecorder();
 
   const interview = useInterview({
-    speak: useLiveInterview ? geminiLive.sendPrompt : kokoroTTS.speak,
-    stop: useLiveInterview ? geminiLive.reset : kokoroTTS.stop,
-    isSpeaking: useLiveInterview ? geminiLive.isSpeaking : kokoroTTS.isSpeaking
+    speak: geminiLive.sendPrompt,
+    stop: geminiLive.reset,
+    isSpeaking: geminiLive.isSpeaking
   });
 
   const { state: interviewState, failInterview, beginListening: beginInterviewListening } = interview;
@@ -49,22 +42,67 @@ export function InterviewRoute() {
   const geminiLiveMessageCount = geminiLiveDiagnostics?.messagesReceived || 0;
   const acknowledgeGeminiRecovery = geminiLive.acknowledgeRecovery;
   const geminiLiveError = geminiLive.error;
-  useEffect(() => {
-    if (interviewMode !== 'live') {
-      liveCaptureActiveRef.current = false;
-      liveCaptureRef.current = null;
-      liveTurnContextRef.current = null;
-      geminiLive.reset();
-      return;
+  const archiveQueryEnabled = [INTERVIEW_STATES.IDLE, INTERVIEW_STATES.SETUP, INTERVIEW_STATES.COMPLETE, INTERVIEW_STATES.ERROR].includes(interviewState);
+  const interviewArchive = useInterviewArchive({ enabled: archiveQueryEnabled });
+
+  const waitForAnalysisCompletion = useCallback(async (sessionId) => {
+    if (!sessionId) return false;
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        const liveSession = await workerApi.getInterviewLiveSession(sessionId);
+        const analysisStatus = liveSession?.session?.analysisStatus || liveSession?.analysisStatus || '';
+        if (analysisStatus === 'completed' || liveSession?.session?.status === 'completed') {
+          await interviewArchive.refreshSessions();
+          return true;
+        }
+      } catch (err) {
+        console.warn('Waiting for background analysis failed:', err);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
+    return false;
+  }, [interviewArchive]);
+
+  useEffect(() => {
     if (geminiLiveError && ![INTERVIEW_STATES.IDLE, INTERVIEW_STATES.SETUP, INTERVIEW_STATES.COMPLETE, INTERVIEW_STATES.ERROR].includes(interviewState)) {
       failInterview(geminiLiveError);
     }
-  }, [interviewMode, geminiLiveError, interviewState, failInterview, geminiLive]);
+  }, [geminiLiveError, interviewState, failInterview]);
 
   useEffect(() => {
-    if (interviewMode !== 'live') return;
+    const sessionId = currentArchiveSessionIdRef.current;
+    if (!sessionId || interviewState !== INTERVIEW_STATES.COMPLETE || analysisState !== 'running' || analysisRequestSentRef.current) {
+      return;
+    }
+
+    void (async () => {
+      analysisRequestSentRef.current = true;
+      try {
+        await workerApi.completeInterviewLiveSession(sessionId, {});
+      } catch (err) {
+        console.warn('Failed to start backend analysis:', err);
+        setAnalysisState('failed');
+      }
+    })();
+  }, [analysisState, geminiLive, interview.config, interviewState]);
+
+  useEffect(() => {
+    if (analysisState !== 'running') {
+      return;
+    }
+
+    if (geminiLiveLastEvent === 'analysis-complete') {
+      void interviewArchive.refreshSessions();
+      startTransition(() => {
+        setAnalysisState('completed');
+      });
+    }
+  }, [analysisState, geminiLiveLastEvent, interviewArchive]);
+
+  useEffect(() => {
     if ([INTERVIEW_STATES.IDLE, INTERVIEW_STATES.SETUP, INTERVIEW_STATES.COMPLETE, INTERVIEW_STATES.ERROR].includes(interviewState)) {
       return;
     }
@@ -84,34 +122,29 @@ export function InterviewRoute() {
     if (geminiTransitionHandledRef.current === transitionKey) return;
     geminiTransitionHandledRef.current = transitionKey;
     beginInterviewListening({ preserveTimer: true, startTimer: false });
-  }, [acknowledgeGeminiRecovery, beginInterviewListening, geminiLiveLastEvent, geminiLiveMessageCount, geminiLiveTurnState, interviewState, interviewMode]);
+  }, [acknowledgeGeminiRecovery, beginInterviewListening, geminiLiveLastEvent, geminiLiveMessageCount, geminiLiveTurnState, interviewState]);
 
   useEffect(() => {
     const sessionId = currentArchiveSessionIdRef.current;
     if (!sessionId) return;
 
-    if (interview.state === INTERVIEW_STATES.COMPLETE && archivedSessionFinalizedRef.current !== sessionId) {
-      archivedSessionFinalizedRef.current = sessionId;
+    if (interview.state === INTERVIEW_STATES.COMPLETE) {
       liveTurnContextRef.current = null;
-      void interviewArchive.finalizeSession(sessionId, {
-        ...interview.getResults(),
-        conversationSnapshot: geminiLive.getConversationSnapshot?.() || null
-      });
+      if (analysisState === 'idle') {
+        startTransition(() => {
+          setAnalysisState('running');
+        });
+      }
       return;
     }
 
     if (interview.state === INTERVIEW_STATES.ERROR && archivedSessionFailedRef.current !== sessionId) {
       archivedSessionFailedRef.current = sessionId;
-      void interviewArchive.failSession(
-        sessionId,
-        interview.error || geminiLive.error || 'Interview failed',
-        {
-          ...interview.getResults(),
-          conversationSnapshot: geminiLive.getConversationSnapshot?.() || null
-        }
-      );
+      startTransition(() => {
+        setAnalysisState('failed');
+      });
     }
-  }, [geminiLive.error, interview, interview.error, interview.state, interviewArchive]);
+  }, [analysisState, geminiLive, interview, interview.error, interview.state]);
 
   const handleInterviewQuestionAsked = useCallback((question, questionIndex) => {
     const sessionId = currentArchiveSessionIdRef.current;
@@ -119,42 +152,24 @@ export function InterviewRoute() {
     const turnIndex = currentArchiveTurnIndexRef.current;
     currentArchiveTurnIndexRef.current += 1;
     lastArchiveTurnIndexRef.current = turnIndex;
-    if (interviewMode === 'live') {
-      liveTurnContextRef.current = geminiLive.beginTurnContext({
-        turnId: `${sessionId}:${turnIndex}`,
-        turnIndex,
-        questionIndex,
-        question,
-        questionText: question.text,
-        assistantText: question.text,
-        source: 'gemini-live',
-        captureMode: 'realtime',
-        turnLabel: question.isIntroPrompt ? 'intro-cue' : 'live-question',
-        liveDiagnostics: geminiLive.diagnostics
-      });
-    }
-
-    void interviewArchive.recordQuestion(sessionId, {
-      questionIndex,
+    liveTurnContextRef.current = geminiLive.beginTurnContext({
+      turnId: `${sessionId}:${turnIndex}`,
       turnIndex,
-      text: question.text,
-      category: question.category,
-      keyPoints: question.keyPoints,
-      askedAt: new Date().toISOString(),
+      questionIndex,
+      question,
+      questionText: question.text,
       assistantText: question.text,
-      source: interviewMode === 'live' ? 'gemini-live' : 'groq',
-      captureMode: interviewMode === 'live' ? 'realtime' : 'recorded',
-      turnLabel: question.isIntroPrompt ? 'intro-cue' : 'question',
-      turnContext: liveTurnContextRef.current,
-      liveDiagnostics: interviewMode === 'live' ? geminiLive.diagnostics : null
+      source: 'gemini-live',
+      captureMode: 'realtime',
+      turnLabel: question.isIntroPrompt ? 'intro-cue' : 'live-question',
+      liveDiagnostics: geminiLive.diagnostics
     });
-  }, [geminiLive, interviewArchive, interviewMode]);
+  }, [geminiLive]);
 
   const handleInterviewTurnTranscriptReady = useCallback(({ question, questionIndex, transcript, duration, skipped, assistantText }) => {
     const sessionId = currentArchiveSessionIdRef.current;
-    if (!sessionId || interviewMode !== 'live') return;
+    if (!sessionId) return;
     const turnIndex = lastArchiveTurnIndexRef.current;
-    const liveSnapshot = geminiLive.getConversationSnapshot?.() || null;
 
     liveTurnContextRef.current = geminiLive.completeTurnContext({
       turnId: `${sessionId}:${turnIndex}`,
@@ -173,61 +188,52 @@ export function InterviewRoute() {
       liveDiagnostics: geminiLive.diagnostics
     });
 
-    void (async () => {
-      await interviewArchive.syncConversationSnapshot(sessionId, {
-        ...liveSnapshot,
-        liveDiagnostics: geminiLive.diagnostics,
-        currentTurn: liveTurnContextRef.current
-      });
-    })();
-  }, [geminiLive, interviewMode]);
+  }, [geminiLive]);
 
-  const handleInterviewAnswerComplete = useCallback(({ question, questionIndex, transcript, duration, evaluation, skipped, assistantText, audioBlob }) => {
+  const handleInterviewAnswerComplete = useCallback(() => {
+    if (!currentArchiveSessionIdRef.current) return;
+  }, []);
+
+  const handleInterviewEnd = useCallback(async () => {
     const sessionId = currentArchiveSessionIdRef.current;
-    if (!sessionId) return;
-    const liveSnapshot = geminiLive.getConversationSnapshot?.() || null;
 
-    void interviewArchive.recordAnswer(sessionId, {
-      questionIndex,
-      turnIndex: lastArchiveTurnIndexRef.current,
-      transcript: liveSnapshot?.currentTurnTranscript || transcript,
-      duration,
-      question,
-      category: question?.category,
-      evaluation,
-      skipped,
-      assistantText,
-      audioBlob,
-      source: interviewMode === 'live' ? 'gemini-live' : 'groq',
-      captureMode: interviewMode === 'live' ? 'realtime' : 'recorded',
-      turnLabel: question?.isIntroPrompt ? 'intro-cue' : 'answer',
-      turnContext: liveTurnContextRef.current,
-      liveDiagnostics: interviewMode === 'live' ? geminiLive.diagnostics : null,
-      conversationSnapshot: interviewMode === 'live'
-        ? {
-            ...liveSnapshot,
-            liveDiagnostics: geminiLive.diagnostics,
-            currentTurn: liveTurnContextRef.current,
-            transcriptText: liveSnapshot?.currentTurnTranscript || transcript,
-            latestTranscript: liveSnapshot?.currentTurnTranscript || transcript,
-            sessionTranscriptText: liveSnapshot?.sessionTranscriptText || liveSnapshot?.transcriptText || transcript
-          }
-        : null
-    });
-
-    if (interviewMode === 'live') {
-      void (async () => {
-        await interviewArchive.syncConversationSnapshot(sessionId, {
-          ...liveSnapshot,
-          liveDiagnostics: geminiLive.diagnostics,
-          currentTurn: liveTurnContextRef.current,
-          transcriptText: liveSnapshot?.currentTurnTranscript || transcript,
-          latestTranscript: liveSnapshot?.currentTurnTranscript || transcript,
-          sessionTranscriptText: liveSnapshot?.sessionTranscriptText || liveSnapshot?.transcriptText || transcript
-        });
-      })();
+    if (!sessionId) {
+      interview.resetInterview();
+      geminiLive.reset();
+      setAnalysisState('idle');
+      return;
     }
-  }, [geminiLive, interviewArchive, interviewMode]);
+
+    analysisRequestSentRef.current = true;
+
+    if (liveCaptureActiveRef.current || geminiLive.isCapturing) {
+      try {
+        await geminiLive.stopAnswerCapture();
+      } catch (err) {
+        console.warn('Failed to stop live capture while ending interview:', err);
+      }
+      liveCaptureActiveRef.current = false;
+      liveCaptureRef.current = null;
+    }
+
+    void (async () => {
+      try {
+        await workerApi.completeInterviewLiveSession(sessionId, {});
+        void waitForAnalysisCompletion(sessionId);
+      } catch (err) {
+        console.warn('Failed to start backend analysis:', err);
+        analysisRequestSentRef.current = false;
+      }
+    })();
+
+    liveTurnContextRef.current = null;
+    currentArchiveTurnIndexRef.current = 0;
+    lastArchiveTurnIndexRef.current = 0;
+    interview.resetInterview();
+    geminiLive.reset();
+    currentArchiveSessionIdRef.current = sessionId;
+    setAnalysisState('idle');
+  }, [geminiLive, interview, setAnalysisState, waitForAnalysisCompletion]);
 
   const handleReuseArchive = useCallback(async (sessionId) => {
     try {
@@ -237,21 +243,21 @@ export function InterviewRoute() {
       currentArchiveSessionIdRef.current = null;
       archivedSessionFinalizedRef.current = null;
       archivedSessionFailedRef.current = null;
+      analysisRequestSentRef.current = false;
       interview.resetInterview();
       geminiLive.reset();
       liveCaptureActiveRef.current = false;
       liveCaptureRef.current = null;
-      setInterviewMode(session.mode || 'groq');
       interview.setConfig((prev) => ({
         ...prev,
         ...session.config,
-        interviewMode: session.mode || prev.interviewMode
+        interviewMode: 'live'
       }));
       interview.setState(INTERVIEW_STATES.SETUP);
     } catch (err) {
       console.warn('Failed to reuse archived interview:', err);
     }
-  }, [geminiLive, interview, interviewArchive, setInterviewMode]);
+  }, [geminiLive, interview, interviewArchive]);
 
   const handleExportArchive = useCallback(async (sessionId) => {
     try {
@@ -262,46 +268,30 @@ export function InterviewRoute() {
   }, [interviewArchive]);
 
   const handleInterviewStartRecording = useCallback(async () => {
-    if (useLiveInterview) {
-      liveCaptureRef.current = null;
-      const result = await geminiLive.startAnswerCapture();
-      liveCaptureActiveRef.current = Boolean(result.ok);
-      if (result.ok) {
-        beginInterviewListening({ preserveTimer: false, startTimer: true });
-        return result;
-      }
-      liveCaptureActiveRef.current = false;
-      interview.failInterview(result.reason || 'Gemini 3.1 Flash Live answer capture failed');
-      return null;
+    liveCaptureRef.current = null;
+    const result = await geminiLive.startAnswerCapture();
+    liveCaptureActiveRef.current = Boolean(result.ok);
+    if (result.ok) {
+      beginInterviewListening({ preserveTimer: false, startTimer: true });
+      return result;
     }
-
     liveCaptureActiveRef.current = false;
-    return startRecording();
-  }, [beginInterviewListening, interview, geminiLive, startRecording, useLiveInterview]);
+    interview.failInterview(result.reason || 'Gemini 3.1 Flash Live answer capture failed');
+    return null;
+  }, [beginInterviewListening, interview, geminiLive]);
 
   const handleInterviewStopRecording = useCallback(async () => {
-    if (useLiveInterview) {
-      liveCaptureRef.current = await geminiLive.stopAnswerCapture();
-      liveCaptureActiveRef.current = false;
-      if (!liveCaptureRef.current) {
-        interview.failInterview('Gemini 3.1 Flash Live answer capture stopped unexpectedly');
-        return null;
-      }
-      if (currentArchiveSessionIdRef.current && liveCaptureRef.current.conversationSnapshot) {
-        const sessionId = currentArchiveSessionIdRef.current;
-        await interviewArchive.syncConversationSnapshot(sessionId, liveCaptureRef.current.conversationSnapshot);
-      }
-      return liveCaptureRef.current;
-    }
-
+    liveCaptureRef.current = await geminiLive.stopAnswerCapture();
     liveCaptureActiveRef.current = false;
-    const result = await stopRecording();
-    const blob = result?.blob || result || null;
-    return blob;
-  }, [geminiLive, interview, stopRecording, useLiveInterview]);
+    if (!liveCaptureRef.current) {
+      interview.failInterview('Gemini 3.1 Flash Live answer capture stopped unexpectedly');
+      return null;
+    }
+    return liveCaptureRef.current;
+  }, [geminiLive, interview]);
 
   const handleInterviewTranscribe = useCallback(async (audioBlob) => {
-    if (useLiveInterview && audioBlob) {
+    if (audioBlob) {
       try {
         const liveTranscription = await transcribeAudio(audioBlob);
         const liveText = typeof liveTranscription?.text === 'string' ? liveTranscription.text.trim() : '';
@@ -313,90 +303,81 @@ export function InterviewRoute() {
       }
     }
 
-    if (useLiveInterview) {
-      const liveTranscript = liveCaptureRef.current?.conversationSnapshot?.currentTurnTranscript
-        || liveCaptureRef.current?.transcript
-        || geminiLive.consumeLatestTranscript();
-      if (liveTranscript) {
-        return {
-          text: liveTranscript,
-          words: [],
-          segments: [],
-          duration: 0
-        };
-      }
+    const liveTranscript = liveCaptureRef.current?.conversationSnapshot?.currentTurnTranscript
+      || liveCaptureRef.current?.transcript
+      || geminiLive.consumeLatestTranscript();
+    if (liveTranscript) {
+      return {
+        text: liveTranscript,
+        words: [],
+        segments: [],
+        duration: 0
+      };
     }
 
     return transcribeAudio(audioBlob);
-  }, [geminiLive, transcribeAudio, useLiveInterview]);
+  }, [geminiLive, transcribeAudio]);
 
   const handleStartInterview = useCallback(async () => {
-    if (posthog) posthog.capture('interview_started', { config: interview.config });
-
     try {
       geminiTransitionHandledRef.current = '';
       archivedSessionFinalizedRef.current = null;
       archivedSessionFailedRef.current = null;
+      analysisRequestSentRef.current = false;
       currentArchiveTurnIndexRef.current = 0;
       lastArchiveTurnIndexRef.current = 0;
       liveTurnContextRef.current = null;
 
-      const archiveSessionId = interviewArchive.beginSession({
-        mode: interviewMode,
-        config: interview.config,
-        questions: [],
-        source: 'interview'
-      });
+      const archiveSessionId = globalThis.crypto?.randomUUID?.()
+        || `interview-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       currentArchiveSessionIdRef.current = archiveSessionId;
+      setAnalysisState('idle');
 
       console.info('[Interview] start requested', {
         mode: interviewMode,
-        apiKeyPresent: Boolean(import.meta.env.VITE_GEMINI_API_KEY)
+        workerApiReady: workerApi.hasWorkerApi()
       });
-      if (interviewMode === 'live') {
-        if (!geminiLive.isReady || geminiLive.error) {
-          interview.failInterview(geminiLive.error || 'Gemini 3.1 Flash Live is unavailable.');
-          return;
-        }
-
-        const liveConnection = await geminiLive.connect(interview.config);
-        console.info('[Interview] Gemini 3.1 Flash Live connect result', liveConnection);
-        if (!liveConnection.ok) {
-          interview.failInterview(liveConnection.reason || 'Gemini 3.1 Flash Live is unavailable.');
-          return;
-        }
-
-        const openingCue = {
-          category: 'Live interview',
-          text: `Press Start Speaking, then say hello or introduce yourself to begin the interview.`,
-          keyPoints: ['Press Start Speaking to begin', 'Say hello or introduce yourself', 'The interview starts after your opening words'],
-          isIntroPrompt: true
-        };
-
-        void interviewArchive.recordQuestionBank(archiveSessionId, [openingCue]);
-        interview.startInterview([openingCue]);
-        handleInterviewQuestionAsked(openingCue, 0);
-        beginInterviewListening({ preserveTimer: false, startTimer: false });
+      if (!geminiLive.isReady || geminiLive.error) {
+        interview.failInterview(geminiLive.error || 'Gemini 3.1 Flash Live is unavailable.');
         return;
       }
 
-      const questions = await generateInterviewQuestions(interview.config);
-      void interviewArchive.recordQuestionBank(archiveSessionId, questions);
-      interview.startInterview(questions);
+      const liveConnection = await geminiLive.connect({
+        ...interview.config,
+        archiveSessionId
+      });
+      console.info('[Interview] Gemini 3.1 Flash Live connect result', liveConnection);
+      if (!liveConnection.ok) {
+        interview.failInterview(liveConnection.reason || 'Gemini 3.1 Flash Live is unavailable.');
+        return;
+      }
+
+      const openingCue = {
+        category: 'Live interview',
+        text: `Press Start Speaking, then say hello or introduce yourself to begin the interview.`,
+        keyPoints: ['Press Start Speaking to begin', 'Say hello or introduce yourself', 'The interview starts after your opening words'],
+        isIntroPrompt: true
+      };
+
+      interview.startInterview([openingCue]);
+      handleInterviewQuestionAsked(openingCue, 0);
+      beginInterviewListening({ preserveTimer: false, startTimer: false });
     } catch (err) {
       console.error('Failed to start interview:', err);
       interview.failInterview(err?.message || 'Failed to start interview');
     }
-  }, [beginInterviewListening, generateInterviewQuestions, handleInterviewQuestionAsked, interview, interviewArchive, interviewMode, posthog, geminiLive]);
+  }, [beginInterviewListening, handleInterviewQuestionAsked, interview, interviewMode, geminiLive]);
 
   const handleInterviewRestart = useCallback(() => {
     geminiTransitionHandledRef.current = '';
     currentArchiveSessionIdRef.current = null;
     archivedSessionFinalizedRef.current = null;
     archivedSessionFailedRef.current = null;
+    analysisRequestSentRef.current = false;
     currentArchiveTurnIndexRef.current = 0;
     lastArchiveTurnIndexRef.current = 0;
     liveTurnContextRef.current = null;
+    setAnalysisState('idle');
     interview.resetInterview();
     geminiLive.reset();
     liveCaptureActiveRef.current = false;
@@ -409,9 +390,11 @@ export function InterviewRoute() {
     currentArchiveSessionIdRef.current = null;
     archivedSessionFinalizedRef.current = null;
     archivedSessionFailedRef.current = null;
+    analysisRequestSentRef.current = false;
     currentArchiveTurnIndexRef.current = 0;
     lastArchiveTurnIndexRef.current = 0;
     liveTurnContextRef.current = null;
+    setAnalysisState('idle');
     interview.resetInterview();
     geminiLive.reset();
     liveCaptureActiveRef.current = false;
@@ -419,7 +402,7 @@ export function InterviewRoute() {
     void navigate({ to: '/script' });
   }, [geminiLive, interview, navigate]);
 
-  const liveStatus = interviewMode === 'live' ? {
+  const liveStatus = {
     mode: interviewMode,
     isConnecting: geminiLive.isConnecting,
     isConnected: geminiLive.isConnected,
@@ -430,23 +413,18 @@ export function InterviewRoute() {
     turnStatus: geminiLive.turnStatus,
     diagnostics: geminiLive.diagnostics,
     error: geminiLive.error
-  } : null;
+  };
 
   return (
-    <div className="flex flex-1 flex-col">
+    <MagicBackground className="flex min-h-screen flex-col">
+    <div className="flex flex-1 flex-col px-4 py-4 md:px-6 md:py-6">
       {(interview.state === INTERVIEW_STATES.IDLE || interview.state === INTERVIEW_STATES.SETUP) && (
         <InterviewSetup
           config={interview.config}
           setConfig={interview.setConfig}
           onStartInterview={handleStartInterview}
-          onModeChange={setInterviewMode}
           isLoading={isTranscribing}
-          ttsStatus={interviewMode === 'live' ? null : {
-            isLoading: kokoroTTS.isLoading,
-            isReady: kokoroTTS.isReady,
-            usesFallback: kokoroTTS.usesFallback
-          }}
-          liveStatus={interviewMode === 'live' ? {
+          liveStatus={{
             isReady: geminiLive.isReady,
             isConnecting: geminiLive.isConnecting,
             isConnected: geminiLive.isConnected,
@@ -458,7 +436,7 @@ export function InterviewRoute() {
             diagnostics: geminiLive.diagnostics,
             turnState: geminiLiveTurnState,
             turnStatus: geminiLive.turnStatus
-          } : null}
+          }}
           archiveSessions={interviewArchive.sessions}
           archiveLoading={interviewArchive.isLoading}
           archiveError={interviewArchive.error}
@@ -473,60 +451,40 @@ export function InterviewRoute() {
         interview.state !== INTERVIEW_STATES.ERROR && (
           <InterviewSession
             interview={interview}
-            isRecording={useLiveInterview ? geminiLive.isCapturing : false}
+            isRecording={geminiLive.isCapturing}
             onStartRecording={handleInterviewStartRecording}
             onStopRecording={handleInterviewStopRecording}
             onTranscribe={handleInterviewTranscribe}
-            onEvaluate={evaluateAnswer}
             isProcessing={isTranscribing}
-            isGeneratingAudio={useLiveInterview ? geminiLive.isSpeaking : kokoroTTS.isGenerating}
+            isGeneratingAudio={geminiLive.isSpeaking}
             liveStatus={liveStatus}
-            onQuestionAsked={handleInterviewQuestionAsked}
             onTurnTranscriptReady={handleInterviewTurnTranscriptReady}
             onAnswerComplete={handleInterviewAnswerComplete}
+            onEndInterview={handleInterviewEnd}
           />
-      )}
-
-      {interview.state === INTERVIEW_STATES.COMPLETE && (
-        <div className="flex flex-1 items-center justify-center">
-          <OatCard className="refined-card max-w-2xl text-center">
-            <div className="mb-3 text-5xl">✅</div>
-            <h3 className="mb-2 text-2xl font-semibold text-text">Interview complete</h3>
-            <p className="mb-6 text-sm text-on-surface-variant">
-              Your session is finished. You can start a new interview or go back home.
-            </p>
-            <div className="flex justify-center gap-3">
-              <OatButton onClick={handleInterviewRestart}>
-                Start Another
-              </OatButton>
-              <OatButton onClick={handleInterviewGoHome} variant="secondary" outline>
-                Back to Home
-              </OatButton>
-            </div>
-          </OatCard>
-        </div>
       )}
 
       {interview.state === INTERVIEW_STATES.ERROR && (
         <div className="flex flex-1 items-center justify-center">
-          <OatCard className="refined-card max-w-2xl text-center">
+          <MagicCard className="max-w-2xl p-8 text-center">
             <div className="mb-3 text-5xl">⚠️</div>
-            <h3 className="mb-2 text-2xl font-semibold text-text">Interview stopped</h3>
-            <p className="mb-6 text-sm text-on-surface-variant">
+            <h3 className="mb-2 text-2xl font-semibold text-slate-950">Interview stopped</h3>
+            <p className="mb-6 text-sm text-slate-600">
               {interview.error || geminiLive.error || 'Gemini 3.1 Flash Live disconnected. Please retry the live interview.'}
             </p>
             <div className="flex justify-center gap-3">
-              <OatButton onClick={handleInterviewRestart} variant="secondary" outline>
+              <MagicButton onClick={handleInterviewRestart} variant="secondary">
                 Retry Setup
-              </OatButton>
-              <OatButton onClick={handleInterviewGoHome} variant="secondary" outline>
+              </MagicButton>
+              <MagicButton onClick={handleInterviewGoHome} variant="secondary">
                 Back to Home
-              </OatButton>
+              </MagicButton>
             </div>
-          </OatCard>
+          </MagicCard>
         </div>
       )}
     </div>
+    </MagicBackground>
   );
 }
 

@@ -17,7 +17,6 @@ export function ScriptRoute() {
   const bumpPracticeSessionKey = usePracticeStore((state) => state.bumpPracticeSessionKey);
 
   const handleEnterPractice = useCallback(() => {
-    if (window.posthog) window.posthog.capture('practice_started');
     resetSession();
     setIsPracticing(false);
     setPracticeSpeed(20);

@@ -86,10 +86,8 @@ export function useInterview(tts = {}) {
     setState(INTERVIEW_STATES.LISTENING);
     setAnswerTime(0);
 
-    if (config.interviewMode !== 'live') {
-      startTimer();
-    }
-  }, [config.interviewMode, currentQuestionIndex, failInterview, questions, setAnswerTime, setState, speak, startTimer]);
+    startTimer();
+  }, [currentQuestionIndex, failInterview, questions, setAnswerTime, setState, speak, startTimer]);
 
   const beginListening = useCallback((options = {}) => {
     const { preserveTimer = false, startTimer: shouldStartTimer = true } = options;

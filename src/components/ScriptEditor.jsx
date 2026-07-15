@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useGroq } from '../hooks/useGroq';
-import {
-  estimateReadingTime
-} from '../utils/formatters';
 import { showOatToast } from '../utils/oat';
 import {
   MagicButton,
   MagicCard,
+  MagicDock,
   MagicField,
   MagicInput,
   MagicSelect,
@@ -47,7 +45,6 @@ export function ScriptEditor({
   const [tone, setTone] = useState('calm');
   const [difficulty, setDifficulty] = useState('medium');
   const [duration, setDuration] = useState(2);
-  const [useCurrentData, setUseCurrentData] = useState(false);
   const [savedScripts, setSavedScripts] = useState(loadSavedScripts);
   const [showLibrary, setShowLibrary] = useState(false);
   const editorRef = useRef(null);
@@ -79,25 +76,14 @@ export function ScriptEditor({
     if (!trimmedTopic && !script.trim()) return;
 
     try {
-      if (window.posthog) {
-        window.posthog.capture('script_generated', {
-          topic_length: trimmedTopic.length,
-          tone,
-          difficulty,
-          duration_target: duration,
-          use_current_data: useCurrentData
-        });
-      }
-
       const generatedScript = script.trim()
         ? await refineScript(script, {
           topic: trimmedTopic || 'this script',
           tone,
           targetDuration: duration * 60,
-          difficulty,
-          useCurrentData
+          difficulty
         })
-        : await generateScript(trimmedTopic, tone, duration * 60, difficulty, useCurrentData);
+        : await generateScript(trimmedTopic, tone, duration * 60, difficulty);
 
       onScriptChange(generatedScript);
       captureToast(script.trim() ? 'Script refined into the roadmap format' : 'New roadmap script generated');
@@ -114,8 +100,7 @@ export function ScriptEditor({
     refineScript,
     script,
     tone,
-    topic,
-    useCurrentData
+    topic
   ]);
 
   const handleSaveScript = useCallback(() => {
@@ -123,12 +108,6 @@ export function ScriptEditor({
 
     const title = window.prompt('Enter a name for this script:', topic || 'Untitled Script');
     if (!title) return;
-
-    if (window.posthog) {
-      window.posthog.capture('script_saved', {
-        word_count: wordCount
-      });
-    }
 
     const newScript = {
       id: Date.now(),
@@ -283,18 +262,6 @@ export function ScriptEditor({
                 <option value="10">10 min</option>
               </MagicSelect>
             </MagicField>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between gap-4 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
-            <label className="flex items-center gap-3 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={useCurrentData}
-                onChange={() => setUseCurrentData((prev) => !prev)}
-                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/20"
-              />
-              Use current context
-            </label>
           </div>
 
           <div className="mt-6 space-y-3">

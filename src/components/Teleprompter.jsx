@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseDeliveryScript } from '../utils/formatters';
-import { OatButton } from './ui/OatComponents';
+import { MagicButton } from './ui/MagicUI';
 
 const CANONICAL_ROADMAP_SECTIONS = ['Hook', 'Core Narrative', 'Call to Action', 'Finish'];
 
@@ -119,6 +119,7 @@ export function Teleprompter({
   const scrollPosRef = useRef(0);
   const animationRef = useRef(null);
   const speedRef = useRef(initialSpeed);
+  const startupTimerRef = useRef(null);
 
   const resolvedPreferences = notationPreferences || DEFAULT_NOTATION_PREFERENCES;
   const parsedScript = useMemo(() => parseDeliveryScript(script), [script]);
@@ -128,10 +129,12 @@ export function Teleprompter({
   const canonicalSections = useMemo(() => {
     const sectionOrder = new Map(CANONICAL_ROADMAP_SECTIONS.map((title, index) => [title, index]));
 
-    return parsedScript.sections
+    const canonical = parsedScript.sections
       .filter((section) => sectionOrder.has(section.title))
       .slice()
       .sort((left, right) => sectionOrder.get(left.title) - sectionOrder.get(right.title));
+
+    return canonical.length > 0 ? canonical : parsedScript.sections;
   }, [parsedScript.sections]);
 
   const handleSpeedUp = useCallback(() => {
@@ -214,26 +217,35 @@ export function Teleprompter({
   }, [handleReset, handleSpeedDown, handleSpeedUp, handleTogglePause, isActive]);
 
   useEffect(() => {
-    if (!isActive) {
-      const resetTimer = window.setTimeout(() => {
+    if (startupTimerRef.current) {
+      window.clearTimeout(startupTimerRef.current);
+      startupTimerRef.current = null;
+    }
+
+    startupTimerRef.current = window.setTimeout(() => {
+      scrollPosRef.current = 0;
+
+      if (!isActive) {
         setCountdown(0);
         setIsScrolling(false);
         setPause(false);
-      }, 0);
-
-      return () => window.clearTimeout(resetTimer);
-    }
-
-    if (isScrolling || countdown !== 0) {
-      return undefined;
-    }
-
-    const startTimer = window.setTimeout(() => {
-      setCountdown(5);
+      } else {
+        if (contentRef.current) {
+          contentRef.current.scrollTop = 0;
+        }
+        setPause(false);
+        setIsScrolling(false);
+        setCountdown(5);
+      }
     }, 0);
 
-    return () => window.clearTimeout(startTimer);
-  }, [countdown, isActive, isScrolling]);
+    return () => {
+      if (startupTimerRef.current) {
+        window.clearTimeout(startupTimerRef.current);
+        startupTimerRef.current = null;
+      }
+    };
+  }, [isActive, script, setPause]);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -303,7 +315,6 @@ export function Teleprompter({
     const resetTimer = window.setTimeout(() => {
       setPause(false);
       setIsScrolling(false);
-      setCountdown(0);
 
       if (contentRef.current) {
         contentRef.current.scrollTop = 0;
@@ -354,11 +365,12 @@ export function Teleprompter({
         ref={contentRef}
         className={textClassName}
         style={{
-          height: variant === 'panel' ? 'auto' : '100%',
-          minHeight: variant === 'panel' ? 0 : undefined,
-          flex: variant === 'panel' ? '1 1 0' : undefined,
+          height: '100%',
+          minHeight: 0,
+          flex: '1 1 0',
           overflow: 'hidden',
-          overflowY: variant === 'panel' ? 'auto' : 'hidden',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
           paddingTop: variant === 'panel' ? '0' : '44vh',
           paddingBottom: variant === 'panel' ? '0' : '42vh'
         }}
@@ -381,9 +393,9 @@ export function Teleprompter({
           {isActive && (
             <div className={controlsClassName}>
               <span className="teleprompter-speed-label">Speed</span>
-              <OatButton onClick={handleSpeedDown} className="teleprompter-control-button" type="button" variant="secondary" outline>
+              <MagicButton onClick={handleSpeedDown} className="teleprompter-control-button !min-h-10 !px-4 !py-2" type="button" variant="secondary">
                 −
-              </OatButton>
+              </MagicButton>
               <div className="teleprompter-speed-meter">
                 <div className="teleprompter-speed-track">
                   <div
@@ -393,21 +405,23 @@ export function Teleprompter({
                 </div>
                 <span>{resolvedSpeed}%</span>
               </div>
-              <OatButton onClick={handleSpeedUp} className="teleprompter-control-button" type="button" variant="secondary" outline>
+              <MagicButton onClick={handleSpeedUp} className="teleprompter-control-button !min-h-10 !px-4 !py-2" type="button" variant="secondary">
                 +
-              </OatButton>
-              <OatButton
+              </MagicButton>
+              <MagicButton
                 onClick={handleTogglePause}
-                className={`teleprompter-pause-button ${isPaused ? 'paused' : 'running'}`}
+                className="teleprompter-pause-button !min-h-10 !min-w-[124px] !px-4 !py-2"
                 type="button"
-                variant="secondary"
-                outline
+                variant={isPaused ? 'secondary' : 'accent'}
+                aria-pressed={isPaused}
+                aria-label={isPaused ? 'Resume teleprompter' : 'Pause teleprompter'}
               >
-                {isPaused ? '▶' : '⏸'}
-              </OatButton>
-              <OatButton onClick={handleReset} className="teleprompter-control-button" type="button" variant="secondary" outline>
+                <span className="teleprompter-pause-button-icon">{isPaused ? '▶' : '⏸'}</span>
+                <span className="teleprompter-pause-button-label">{isPaused ? 'Resume' : 'Pause'}</span>
+              </MagicButton>
+              <MagicButton onClick={handleReset} className="teleprompter-control-button !min-h-10 !px-4 !py-2" type="button" variant="secondary">
                 ↺
-              </OatButton>
+              </MagicButton>
             </div>
           )}
 

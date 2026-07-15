@@ -1,12 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
-    SARVAM_TTS_API_URL,
     SARVAM_TTS_DEFAULT_LANGUAGE,
     SARVAM_TTS_DEFAULT_MODEL,
     SARVAM_TTS_DEFAULT_SPEAKER,
     buildSarvamAudioBlob,
-    extractSarvamErrorMessage
-} from '../utils/sarvamTts';
+} from '../utils/sarvamTts.js';
+import { workerApi } from '../api/workerClient.js';
 
 export function useSarvamTTS({ enabled = true } = {}) {
     const [isLoading, setIsLoading] = useState(true);
@@ -19,8 +18,6 @@ export function useSarvamTTS({ enabled = true } = {}) {
     const audioRef = useRef(null);
     const audioUrlRef = useRef(null);
     const abortRef = useRef(null);
-
-    const apiKey = import.meta.env.VITE_SARVAM_API_KEY;
 
     useEffect(() => {
         let mounted = true;
@@ -38,7 +35,7 @@ export function useSarvamTTS({ enabled = true } = {}) {
             }
 
             if (mounted) {
-                setUsesFallback(!apiKey);
+                setUsesFallback(!workerApi.hasWorkerApi());
                 setIsReady(true);
                 setIsLoading(false);
             }
@@ -60,7 +57,7 @@ export function useSarvamTTS({ enabled = true } = {}) {
                 audioUrlRef.current = null;
             }
         };
-    }, [apiKey, enabled]);
+    }, [enabled]);
 
     const speakFallback = useCallback((text) => {
         return new Promise((resolve) => {
@@ -159,7 +156,7 @@ export function useSarvamTTS({ enabled = true } = {}) {
 
         stop();
 
-        if (!apiKey) {
+        if (!workerApi.hasWorkerApi()) {
             setUsesFallback(true);
             return speakFallback(text);
         }
@@ -171,28 +168,16 @@ export function useSarvamTTS({ enabled = true } = {}) {
             setIsGenerating(true);
             setError(null);
 
-            const response = await fetch(SARVAM_TTS_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'api-subscription-key': apiKey
-                },
-                body: JSON.stringify({
-                    text,
-                    target_language_code: options.targetLanguageCode || SARVAM_TTS_DEFAULT_LANGUAGE,
-                    speaker: options.speaker || SARVAM_TTS_DEFAULT_SPEAKER,
-                    model: options.model || SARVAM_TTS_DEFAULT_MODEL,
-                    pace: options.pace ?? 1
-                }),
+            const payload = await workerApi.generateSarvamTts({
+                text,
+                target_language_code: options.targetLanguageCode || SARVAM_TTS_DEFAULT_LANGUAGE,
+                speaker: options.speaker || SARVAM_TTS_DEFAULT_SPEAKER,
+                model: options.model || SARVAM_TTS_DEFAULT_MODEL,
+                pace: options.pace ?? 1
+            }, {
                 signal: controller.signal
             });
 
-            if (!response.ok) {
-                const errorPayload = await response.json().catch(() => ({}));
-                throw new Error(extractSarvamErrorMessage(errorPayload, `Sarvam TTS failed with status ${response.status}`));
-            }
-
-            const payload = await response.json();
             const base64Audio = payload?.audios?.[0];
 
             if (!base64Audio) {
@@ -220,7 +205,7 @@ export function useSarvamTTS({ enabled = true } = {}) {
                 abortRef.current = null;
             }
         }
-    }, [apiKey, playAudioBlob, speakFallback, stop]);
+    }, [playAudioBlob, speakFallback, stop]);
 
     const pregenerate = useCallback(() => { }, []);
     const clearCache = useCallback(() => { }, []);

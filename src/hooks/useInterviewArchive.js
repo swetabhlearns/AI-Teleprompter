@@ -38,13 +38,19 @@ function removeSummary(list = [], sessionId = '') {
     return list.filter((item) => item.id !== sessionId);
 }
 
-export function useInterviewArchive() {
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function useInterviewArchive({ enabled = true } = {}) {
     const queryClient = useQueryClient();
     const taskQueueRef = useRef(Promise.resolve());
+    const sessionCreateStateRef = useRef(new Map());
 
     const sessionsQuery = useQuery({
         queryKey: ARCHIVE_QUERY_KEY,
         queryFn: listInterviewArchiveSessions,
+        enabled,
         staleTime: 10_000
     });
 
@@ -69,99 +75,161 @@ export function useInterviewArchive() {
         return result;
     }, [queryClient]);
 
-    const beginSession = useCallback(({ mode, config, questions = [], source = 'interview' } = {}) => {
+    const beginSession = useCallback(({ id, mode, config, questions = [], source = 'interview' } = {}) => {
         const session = createInterviewArchiveSession({
+            id,
             mode,
             config,
             questions,
             source
         });
 
-        void enqueueTask(async () => {
+        const createTask = enqueueTask(async () => {
             const initialQuestions = Array.isArray(questions) && questions.length > 0 ? questions : session.questions;
-            const nextSession = await saveInterviewArchiveSession({
-                ...session,
-                questions: initialQuestions
-            });
+            try {
+                const nextSession = await saveInterviewArchiveSession({
+                    ...session,
+                    questions: initialQuestions
+                });
 
-            queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
-            return nextSession;
+                if (nextSession) {
+                    sessionCreateStateRef.current.set(session.id, 'ready');
+                    queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
+                    return nextSession;
+                }
+            } catch (createError) {
+                console.warn('[InterviewArchive] create request failed, probing for persisted session:', createError);
+            }
+
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                await delay(100 * (attempt + 1));
+                const recoveredSession = await getInterviewArchiveSession(session.id);
+                if (recoveredSession) {
+                    sessionCreateStateRef.current.set(session.id, 'ready');
+                    queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(recoveredSession)));
+                    return recoveredSession;
+                }
+            }
+
+            sessionCreateStateRef.current.set(session.id, 'failed');
+            return null;
+        });
+
+        sessionCreateStateRef.current.set(session.id, 'pending');
+
+        createTask.catch(() => {
+            sessionCreateStateRef.current.set(session.id, 'failed');
         });
 
         return session.id;
     }, [enqueueTask, queryClient]);
 
+    const waitForSessionCreate = useCallback(async (sessionId) => {
+        const state = sessionCreateStateRef.current.get(sessionId);
+        if (!state || state === 'ready') {
+            return true;
+        }
+
+        if (state === 'failed') {
+            return false;
+        }
+
+        while (sessionCreateStateRef.current.get(sessionId) === 'pending') {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+
+        return sessionCreateStateRef.current.get(sessionId) === 'ready';
+    }, []);
+
     const recordQuestion = useCallback((sessionId, payload = {}) => {
         if (!sessionId) return Promise.resolve(null);
 
         return enqueueTask(async () => {
+            const ready = await waitForSessionCreate(sessionId);
+            if (!ready) return null;
+
             const nextSession = await appendInterviewQuestion(sessionId, payload);
             if (!nextSession) return null;
 
             queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
             return nextSession;
         });
-    }, [enqueueTask, queryClient]);
+    }, [enqueueTask, queryClient, waitForSessionCreate]);
 
     const recordQuestionBank = useCallback((sessionId, questions = []) => {
         if (!sessionId) return Promise.resolve(null);
 
         return enqueueTask(async () => {
+            const ready = await waitForSessionCreate(sessionId);
+            if (!ready) return null;
+
             const nextSession = await updateInterviewArchiveQuestions(sessionId, questions);
             if (!nextSession) return null;
 
             queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
             return nextSession;
         });
-    }, [enqueueTask, queryClient]);
+    }, [enqueueTask, queryClient, waitForSessionCreate]);
 
     const recordAnswer = useCallback((sessionId, payload = {}) => {
         if (!sessionId) return Promise.resolve(null);
 
         return enqueueTask(async () => {
+            const ready = await waitForSessionCreate(sessionId);
+            if (!ready) return null;
+
             const nextSession = await appendInterviewAnswer(sessionId, payload);
             if (!nextSession) return null;
 
             queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
             return nextSession;
         });
-    }, [enqueueTask, queryClient]);
+    }, [enqueueTask, queryClient, waitForSessionCreate]);
 
     const finalizeSession = useCallback((sessionId, results = null) => {
         if (!sessionId) return Promise.resolve(null);
 
         return enqueueTask(async () => {
+            const ready = await waitForSessionCreate(sessionId);
+            if (!ready) return null;
+
             const nextSession = await completeInterviewArchiveSession(sessionId, results);
             if (!nextSession) return null;
 
             queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
             return nextSession;
         });
-    }, [enqueueTask, queryClient]);
+    }, [enqueueTask, queryClient, waitForSessionCreate]);
 
     const syncConversationSnapshot = useCallback((sessionId, snapshot = {}) => {
         if (!sessionId) return Promise.resolve(null);
 
         return enqueueTask(async () => {
+            const ready = await waitForSessionCreate(sessionId);
+            if (!ready) return null;
+
             const nextSession = await updateInterviewArchiveConversation(sessionId, snapshot);
             if (!nextSession) return null;
 
             queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
             return nextSession;
         });
-    }, [enqueueTask, queryClient]);
+    }, [enqueueTask, queryClient, waitForSessionCreate]);
 
     const failSession = useCallback((sessionId, errorMessage = '', results = null) => {
         if (!sessionId) return Promise.resolve(null);
 
         return enqueueTask(async () => {
+            const ready = await waitForSessionCreate(sessionId);
+            if (!ready) return null;
+
             const nextSession = await failInterviewArchiveSession(sessionId, errorMessage, results);
             if (!nextSession) return null;
 
             queryClient.setQueryData(ARCHIVE_QUERY_KEY, (current = []) => upsertSummary(current, summarizeInterviewArchiveSession(nextSession)));
             return nextSession;
         });
-    }, [enqueueTask, queryClient]);
+    }, [enqueueTask, queryClient, waitForSessionCreate]);
 
     const getSession = useCallback(async (sessionId) => {
         if (!sessionId) return null;

@@ -118,6 +118,21 @@ async function listGeminiModels(ai) {
 }
 
 function pickLiveModel(models, registryEntry) {
+    for (const matcher of registryEntry.preferredNameMatchers || []) {
+        for (const model of models) {
+            const name = normalizeLowerText(model?.name);
+            const displayName = normalizeLowerText(model?.displayName);
+            const version = normalizeLowerText(model?.version);
+
+            if (
+                (matcher instanceof RegExp)
+                && (matcher.test(name) || matcher.test(displayName) || matcher.test(version))
+            ) {
+                return model;
+            }
+        }
+    }
+
     for (const model of models) {
         if (isGeminiLiveCandidate(model, registryEntry)) {
             return model;
@@ -193,14 +208,26 @@ export async function connectGeminiLiveSession({
         throw new Error(`${GEMINI_LIVE_PRODUCT_LABEL} model resolution is required before connecting.`);
     }
 
+    const automaticActivityDetection = config.realtimeInputConfig?.automaticActivityDetection || {
+        disabled: false,
+        silenceDurationMs: Number.isFinite(Number(config.silenceDurationMs))
+            ? Number(config.silenceDurationMs)
+            : 2200
+    };
+
     return ai.live.connect({
         model,
         config: {
             responseModalities: [Modality.AUDIO],
-            realtimeInputConfig: {
-                automaticActivityDetection: {
-                    disabled: false
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: {
+                        voiceName: config.voiceName || 'Kore'
+                    }
                 }
+            },
+            realtimeInputConfig: {
+                automaticActivityDetection
             },
             inputAudioTranscription: {},
             outputAudioTranscription: {},

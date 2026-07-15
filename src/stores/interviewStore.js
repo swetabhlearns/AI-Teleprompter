@@ -4,7 +4,7 @@ import { buildInterviewReplayTurns } from '../utils/interviewArchive';
 export const INTERVIEW_STORE_INITIAL_CONFIG = {
   college: '',
   interviewType: 'general',
-  interviewMode: import.meta.env.VITE_GEMINI_API_KEY ? 'live' : 'groq',
+  interviewMode: 'live',
   duration: 10,
   profile: {
     name: '',
@@ -161,7 +161,7 @@ export const useInterviewStore = create((set, get) => ({
       answered: answers.filter((answer) => answer.transcript !== '[Skipped]').length,
       skipped: answers.filter((answer) => answer.transcript === '[Skipped]').length,
       averageScore: Math.round(avgScore * 10) / 10,
-      mode: config.interviewMode || 'groq',
+      mode: config.interviewMode || 'live',
       questions,
       answers,
       evaluations,

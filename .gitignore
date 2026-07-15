@@ -11,10 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+.teleprompter-test-*/
 
 # Environment variables (contains secrets)
 .env
 .env.local
+worker/.dev.vars
 
 # Editor directories and files
 .vscode/*

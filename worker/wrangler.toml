@@ -1,0 +1,24 @@
+name = "ai-tracker-worker"
+main = "src/index.js"
+compatibility_date = "2026-04-21"
+
+[observability]
+enabled = true
+
+[vars]
+APP_NAME = "AI Tracker"
+GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ai-tracker-db"
+database_id = "fe1ca327-04ba-4810-9851-d4ce00ed9465"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "INTERVIEW_LIVE_SESSION"
+class_name = "InterviewLiveSessionDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["InterviewLiveSessionDO"]

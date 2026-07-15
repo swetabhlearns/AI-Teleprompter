@@ -5,13 +5,14 @@ import {
   GEMINI_LIVE_ERROR_CATEGORIES
 } from '../src/utils/geminiLive.js';
 import {
+  connectGeminiLiveSession,
   endGeminiAudioTurn,
   resolveGeminiLiveModel,
   sendGeminiAudioChunk,
   sendGeminiPrompt
 } from '../src/utils/geminiLiveClient.js';
 
-test('Gemini Live model resolution finds Gemini 3.1 Flash Live Preview from the model list', async () => {
+test('Gemini Live model resolution finds the native audio preview model from the model list', async () => {
   const ai = {
     models: {
       list: async function* list() {
@@ -72,6 +73,26 @@ test('Gemini Live prompt and audio send paths use the docs-supported request sha
   sendGeminiPrompt(promptSession, 'Hello, world');
   sendGeminiAudioChunk(audioSession, Uint8Array.from([112, 99, 109, 45, 98, 121, 116, 101, 115]));
   endGeminiAudioTurn(endSession);
+});
+
+test('Gemini Live connect uses automatic activity detection with a longer silence window by default', async () => {
+  const ai = {
+    live: {
+      connect: async (input) => input
+    }
+  };
+
+  const session = await connectGeminiLiveSession({
+    ai,
+    model: 'gemini-3.1-flash-live-preview',
+    config: {
+      systemInstruction: 'Test'
+    }
+  });
+
+  assert.equal(session.config.realtimeInputConfig.automaticActivityDetection.disabled, false);
+  assert.equal(session.config.realtimeInputConfig.automaticActivityDetection.silenceDurationMs, 2200);
+  assert.equal(session.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, 'Kore');
 });
 
 test('Gemini Live error classification keeps model and transport failures in stable buckets', () => {

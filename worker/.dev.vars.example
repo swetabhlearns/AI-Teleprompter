@@ -1,0 +1,5 @@
+GROQ_API_KEY="your-groq-api-key"
+SARVAM_API_KEY="your-sarvam-api-key"
+ELEVENLABS_API_KEY="your-elevenlabs-api-key"
+GEMINI_API_KEY="your-gemini-api-key"
+GEMINI_LIVE_MODEL="gemini-3.1-flash-live-preview"

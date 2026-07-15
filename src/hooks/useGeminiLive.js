@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import {
     GEMINI_LIVE_ERROR_CATEGORIES,
     GEMINI_LIVE_PRODUCT_LABEL,
@@ -15,18 +14,14 @@ import {
     isLiveTurnComplete
 } from '../utils/geminiLive';
 import {
-    connectGeminiLiveSession,
-    endGeminiAudioTurn,
     normalizeGeminiLiveClientError,
-    resolveGeminiLiveModel,
-    sendGeminiAudioChunk,
-    sendGeminiPrompt
 } from '../utils/geminiLiveClient';
 import {
     calculateGeminiAudioStartTime,
     decodeBase64Pcm16ToFloat32,
     parseGeminiAudioMimeType
 } from '../utils/geminiAudio';
+import { workerApi } from '../api/workerClient';
 
 const GEMINI_INPUT_SAMPLE_RATE = 16000;
 const GEMINI_PROMPT_AUDIO_GRACE_MS = 2500;
@@ -35,12 +30,34 @@ function getAssistantPrompt(config = {}) {
     const {
         college = 'a top B-school',
         interviewType = 'general',
+        duration = 10,
         profile = {}
     } = config;
 
+    const interviewTypeGuidance = {
+        general: `Conduct a realistic MBA admissions interview. Use the profile only as background context, not as a script. Focus on the candidate's story, motivation, leadership, judgment, self-awareness, strengths, weaknesses, and ability to think clearly under pressure. Spend only part of the interview on resume validation; the rest should probe fit, impact, values, and goals.`,
+        hr: `Conduct a fit and judgment interview like a strong admissions panel. Probe teamwork, conflict handling, communication style, ethics, leadership maturity, and self-awareness. Use behavioral questions anchored in past actions, then follow up for evidence, trade-offs, and reflection.`,
+        stress: `Conduct a realistic stress interview without becoming random or hostile. Keep questions sharp, concise, and challenging. Push on inconsistencies, weak claims, gaps in reasoning, and composure. Still stay anchored to admissions-relevant traits such as clarity, resilience, and integrity.`,
+        case: `Conduct an MBA-style case interview focused on structured thinking, not consulting theatrics. Give a business problem or ambiguity, ask the candidate to frame the issue, state assumptions, choose a framework, and synthesize a recommendation. Probe how they think, not just whether they know jargon.`,
+        'wat-pi': `Blend a concise written-answer style with a personal admissions interview. Ask for structured opinions, concise arguments, and examples, then transition into behavioral follow-ups that test depth, coherence, and judgment.`,
+    };
+
+    const durationMinutes = Number.isFinite(Number(duration)) ? Number(duration) : 10;
+    const targetQuestions = durationMinutes <= 5
+        ? '3-4'
+        : durationMinutes <= 10
+            ? '5-6'
+            : durationMinutes <= 15
+                ? '7-8'
+                : '9-10';
+
     return `You are an experienced MBA interviewer for ${college}.
 You are running a ${interviewType} interview.
-The candidate profile is:
+Interview duration target: about ${durationMinutes} minutes.
+Target question count: about ${targetQuestions} questions including follow-ups.
+Interview type guidance: ${interviewTypeGuidance[interviewType] || interviewTypeGuidance.general}
+
+The candidate profile is background context only:
 - Name: ${profile.name || 'Candidate'}
 - Background: ${profile.background || 'Not specified'}
 - Work Experience: ${profile.workExperience || 'Not specified'}
@@ -48,12 +65,23 @@ The candidate profile is:
 - Hobbies: ${profile.hobbies || 'Not specified'}
 - Why MBA: ${profile.whyMba || 'Not specified'}
 
-Ask one concise question at a time.
-Keep it professional, warm, and realistic.
-Do not provide long explanations unless the candidate directly asks for clarification.
-Wait for the candidate's opening greeting or introduction before beginning the interview.
-If the candidate starts with hello or an introduction, begin by asking the first interview question.
-When responding to a candidate answer, acknowledge briefly and move to the next question or a follow-up.`;
+Interview behavior rules:
+- Run this like a real B-school interview, not a resume walkthrough.
+- Use the profile to personalize questions, verify claims, and probe inconsistencies, but do not ask only about the profile.
+- Balance the interview across these areas: opening introduction, career story, leadership, teamwork, conflict, failures, strengths/weaknesses, motivation for MBA, school fit, post-MBA goals, and a few follow-up probes.
+- Ask about concrete past actions more than hypothetical answers.
+- When the candidate gives a vague answer, ask for a specific example, metric, decision, or trade-off.
+- Keep at least one question centered on why this school and why now.
+- Keep at least one question centered on what the candidate will contribute to the cohort.
+- If the interview type is stress or case, still remain admissions-relevant and avoid becoming nonsensical.
+- Ask one concise question at a time.
+- Keep it professional, warm, and realistic.
+- Keep the pace appropriate for the target duration. If the conversation is moving too slowly, ask tighter questions. If the candidate is giving short answers, use focused follow-ups. If the conversation is moving quickly, deepen the probe instead of adding filler.
+- Do not provide long explanations unless the candidate directly asks for clarification.
+- Wait for the candidate's opening greeting or introduction before beginning the interview.
+- If the candidate starts with hello or an introduction, begin by asking the first interview question.
+- When responding to a candidate answer, acknowledge briefly and move to the next question or a follow-up.
+- Try to finish naturally within the target duration by controlling depth and number of follow-ups.`;
 }
 
 function float32ToPcm16Bytes(float32) {
@@ -115,13 +143,50 @@ function safeClone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function bytesToBase64(bytes) {
+    const array = bytes instanceof Uint8Array
+        ? bytes
+        : bytes instanceof ArrayBuffer
+            ? new Uint8Array(bytes)
+            : bytes?.buffer instanceof ArrayBuffer
+                ? new Uint8Array(bytes.buffer)
+                : new Uint8Array();
+
+    if (typeof globalThis.Buffer !== 'undefined') {
+        return globalThis.Buffer.from(array).toString('base64');
+    }
+
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < array.length; i += chunkSize) {
+        binary += String.fromCharCode(...array.subarray(i, i + chunkSize));
+    }
+
+    return btoa(binary);
+}
+
+function isGeminiLiveDebugEnabled() {
+    try {
+        if (globalThis.__AI_TRACKER_GEMINI_LIVE_DEBUG__ === true) {
+            return true;
+        }
+
+        return globalThis.localStorage?.getItem('gemini-live-debug') === '1';
+    } catch {
+        return false;
+    }
+}
+
 function logLiveDebug(event, payload = {}) {
+    if (!isGeminiLiveDebugEnabled()) {
+        return;
+    }
+
     console.debug(`[GeminiLive] ${event}`, payload);
 }
 
 export function useGeminiLive() {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    const [isReady, setIsReady] = useState(false);
+    const [isReady, setIsReady] = useState(workerApi.hasWorkerApi());
     const [isConnecting, setIsConnecting] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -132,7 +197,7 @@ export function useGeminiLive() {
     const [lastInterrupted, setLastInterrupted] = useState(false);
     const [usesFallback, setUsesFallback] = useState(false);
     const [resolvedModel, setResolvedModel] = useState('');
-    const [modelStatus, setModelStatus] = useState(apiKey ? 'checking' : 'missing');
+    const [modelStatus, setModelStatus] = useState(workerApi.hasWorkerApi() ? 'checking' : 'missing');
     const [turnState, setTurnState] = useState(GEMINI_LIVE_TURN_STATES.IDLE);
     const [turnStatus, setTurnStatus] = useState(describeGeminiLiveTurnState(GEMINI_LIVE_TURN_STATES.IDLE));
     const [diagnostics, setDiagnostics] = useState({
@@ -144,10 +209,10 @@ export function useGeminiLive() {
         lastResponseHadAudio: false,
         turnState: GEMINI_LIVE_TURN_STATES.IDLE,
         turnStatus: describeGeminiLiveTurnState(GEMINI_LIVE_TURN_STATES.IDLE),
-        modelStatus: apiKey ? 'checking' : 'missing'
+        modelStatus: workerApi.hasWorkerApi() ? 'checking' : 'missing'
     });
 
-    const aiRef = useRef(null);
+    const wsRef = useRef(null);
     const sessionRef = useRef(null);
     const mediaStreamRef = useRef(null);
     const captureMediaRecorderRef = useRef(null);
@@ -166,10 +231,14 @@ export function useGeminiLive() {
     const playbackPromisesRef = useRef(new Set());
     const receivedAudioRef = useRef(false);
     const closingReasonRef = useRef('');
+    const heartbeatTimerRef = useRef(null);
+    const reconnectTimerRef = useRef(null);
     const lastConnectConfigRef = useRef({});
+    const sessionIdRef = useRef('');
     const resolvedModelRef = useRef('');
-    const modelResolutionPromiseRef = useRef(null);
     const turnStateRef = useRef(GEMINI_LIVE_TURN_STATES.IDLE);
+    const reconnectAttemptRef = useRef(0);
+    const reconnectLiveSessionRef = useRef(async () => ({ ok: false, reason: 'Recovery unavailable' }));
     const diagnosticsRef = useRef(null);
     const turnLedgerRef = useRef([]);
     const conversationEventsRef = useRef([]);
@@ -328,6 +397,17 @@ export function useGeminiLive() {
         return nextFragment;
     }, []);
 
+    const pruneCompletedTurnArtifacts = useCallback((turnId = null) => {
+        if (!turnId) {
+            conversationEventsRef.current = [];
+            transcriptFragmentsRef.current = [];
+            return;
+        }
+
+        conversationEventsRef.current = conversationEventsRef.current.filter((event) => event?.turnId !== turnId);
+        transcriptFragmentsRef.current = transcriptFragmentsRef.current.filter((fragment) => fragment?.turnId !== turnId);
+    }, []);
+
     const getTurnTranscript = useCallback((turnId = null, speaker = 'candidate') => {
         const fragments = transcriptFragmentsRef.current.filter((fragment) => {
             if (!fragment) return false;
@@ -338,6 +418,21 @@ export function useGeminiLive() {
 
         return fragments.map((fragment) => fragment?.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
     }, []);
+
+    const getActiveTurnTranscript = useCallback(() => {
+        const activeTurn = activeTurnRef.current;
+        const fragments = transcriptFragmentsRef.current.filter((fragment) => {
+            if (!fragment) return false;
+            if (fragment.speaker !== 'candidate') return false;
+            if (activeTurn?.turnId && fragment.turnId === activeTurn.turnId) return true;
+            if (Number.isFinite(Number(activeTurn?.turnIndex)) && Number(fragment.turnIndex) === Number(activeTurn.turnIndex)) return true;
+            if (Number.isFinite(Number(activeTurn?.questionIndex)) && Number(fragment.questionIndex) === Number(activeTurn.questionIndex)) return true;
+            return false;
+        });
+
+        const transcript = fragments.map((fragment) => fragment?.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+        return transcript || latestTranscriptRef.current || lastTranscript || '';
+    }, [lastTranscript]);
 
     const buildConversationSnapshot = useCallback(() => {
         const turnLedger = safeClone(turnLedgerRef.current || []);
@@ -376,22 +471,7 @@ export function useGeminiLive() {
                 transcriptWordCount
             }
         };
-    }, [diagnostics, lastInterrupted]);
-
-    const getActiveTurnTranscript = useCallback(() => {
-        const activeTurn = activeTurnRef.current;
-        const fragments = transcriptFragmentsRef.current.filter((fragment) => {
-            if (!fragment) return false;
-            if (fragment.speaker !== 'candidate') return false;
-            if (activeTurn?.turnId && fragment.turnId === activeTurn.turnId) return true;
-            if (Number.isFinite(Number(activeTurn?.turnIndex)) && Number(fragment.turnIndex) === Number(activeTurn.turnIndex)) return true;
-            if (Number.isFinite(Number(activeTurn?.questionIndex)) && Number(fragment.questionIndex) === Number(activeTurn.questionIndex)) return true;
-            return false;
-        });
-
-        const transcript = fragments.map((fragment) => fragment?.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-        return transcript || latestTranscriptRef.current || lastTranscript || '';
-    }, [lastTranscript]);
+    }, [diagnostics, getActiveTurnTranscript, getTurnTranscript, lastInterrupted]);
 
     const queueTurnContextSync = useCallback((turnRecord, phase = 'context', { force = false } = {}) => {
         if (!turnRecord) return;
@@ -601,6 +681,21 @@ export function useGeminiLive() {
         clearPlaybackState();
         cleanupCapture();
         closingReasonRef.current = '';
+        sessionIdRef.current = '';
+        reconnectAttemptRef.current = 0;
+        pendingPromptRef.current = null;
+        activeTurnRef.current = null;
+        latestAssistantTextRef.current = '';
+        latestTranscriptRef.current = '';
+        reconnectLiveSessionRef.current = async () => ({ ok: false, reason: 'Recovery unavailable' });
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+        if (heartbeatTimerRef.current) {
+            clearInterval(heartbeatTimerRef.current);
+            heartbeatTimerRef.current = null;
+        }
         pendingPromptRef.current = null;
         receivedAudioRef.current = false;
         setIsConnected(false);
@@ -618,15 +713,16 @@ export function useGeminiLive() {
 
         audioContextRef.current = null;
 
-        if (sessionRef.current) {
+        if (wsRef.current) {
             try {
                 closingReasonRef.current = 'cleanup';
-                sessionRef.current.close();
+                wsRef.current.close();
             } catch {
                 // ignore close errors
             }
         }
 
+        wsRef.current = null;
         sessionRef.current = null;
     }, [clearPlaybackState, clearTurnState, cleanupCapture, setTurnDiagnostics]);
 
@@ -646,8 +742,8 @@ export function useGeminiLive() {
     }, []);
 
     const ensureModelResolved = useCallback(async () => {
-        if (!apiKey) {
-            const errorMessage = 'Gemini API key is missing';
+        if (!workerApi.hasWorkerApi()) {
+            const errorMessage = 'Worker API base URL is missing';
             setModelStatus('missing');
             setResolvedModel('');
             setIsReady(false);
@@ -656,62 +752,26 @@ export function useGeminiLive() {
             return { ok: false, reason: errorMessage };
         }
 
-        if (!aiRef.current) {
-            aiRef.current = new GoogleGenAI({ apiKey });
-        }
-
-        if (resolvedModelRef.current) {
-            setIsReady(true);
-            setUsesFallback(false);
-            return { ok: true, model: resolvedModelRef.current };
-        }
-
-        if (!modelResolutionPromiseRef.current) {
-            modelResolutionPromiseRef.current = resolveGeminiLiveModel({ ai: aiRef.current });
-        }
-
-        try {
-            const resolved = await modelResolutionPromiseRef.current;
-            resolvedModelRef.current = resolved.model;
-            setResolvedModel(resolved.model);
-            setModelStatus('ready');
-            setIsReady(true);
-            setUsesFallback(false);
-            setError(null);
-            setDiagnostics((prev) => ({
-                ...prev,
-                lastEvent: 'model-ready',
-                modelStatus: 'ready',
-                lastCloseReason: ''
-            }));
-            return { ok: true, model: resolved.model, resolved };
-        } catch (err) {
-            const normalized = normalizeGeminiLiveClientError(
-                err,
-                `${GEMINI_LIVE_PRODUCT_LABEL} is unavailable in the current Gemini model list.`
-            );
-            resolvedModelRef.current = '';
-            setResolvedModel('');
-            setModelStatus('error');
-            setIsReady(false);
-            setUsesFallback(true);
-            setError(normalized.message);
-            setDiagnostics((prev) => ({
-                ...prev,
-                lastEvent: 'model-error',
-                modelStatus: 'error',
-                lastCloseReason: normalized.message
-            }));
-            return { ok: false, reason: normalized.message, category: normalized.category };
-        }
-    }, [apiKey]);
+        const backendModel = 'worker-managed Gemini Live';
+        resolvedModelRef.current = backendModel;
+        setResolvedModel(backendModel);
+        setModelStatus('ready');
+        setIsReady(true);
+        setUsesFallback(false);
+        setError(null);
+        setDiagnostics((prev) => ({
+            ...prev,
+            lastEvent: 'model-ready',
+            modelStatus: 'ready',
+            lastCloseReason: ''
+        }));
+        return { ok: true, model: backendModel };
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
 
-        if (!apiKey) {
-            aiRef.current = null;
-            modelResolutionPromiseRef.current = null;
+        if (!workerApi.hasWorkerApi()) {
             resolvedModelRef.current = '';
             setResolvedModel('');
             setModelStatus('missing');
@@ -727,8 +787,6 @@ export function useGeminiLive() {
             };
         }
 
-        aiRef.current = new GoogleGenAI({ apiKey });
-        modelResolutionPromiseRef.current = null;
         resolvedModelRef.current = '';
         setResolvedModel('');
         setModelStatus('checking');
@@ -751,7 +809,143 @@ export function useGeminiLive() {
         return () => {
             cancelled = true;
         };
-    }, [apiKey, ensureModelResolved]);
+    }, [ensureModelResolved]);
+
+    const finalizeTurn = useCallback(async (interrupted = false) => {
+        logLiveDebug('finalizeTurn:start', {
+            interrupted,
+            receivedAudio: receivedAudioRef.current,
+            assistantText: latestAssistantTextRef.current,
+            transcriptText: latestTranscriptRef.current,
+            turnState: turnStateRef.current
+        });
+        try {
+            await playbackScheduleRef.current;
+        } catch {
+            // ignore playback schedule errors
+        }
+
+        try {
+            await waitForPlaybackDrain();
+        } catch {
+            // ignore drain errors
+        }
+
+        setIsSpeaking(false);
+        if (activeTurnRef.current) {
+            const completedTurnId = activeTurnRef.current.turnId || null;
+            completeTurnContext({
+                ...activeTurnRef.current,
+                interrupted: Boolean(interrupted || activeTurnRef.current.interrupted),
+                evaluation: activeTurnRef.current.evaluation || null,
+                force: true
+            });
+            pruneCompletedTurnArtifacts(completedTurnId);
+        }
+        activeTurnRef.current = null;
+        setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, interrupted ? 'Turn complete after interruption' : 'Turn complete');
+        setDiagnostics((prev) => ({
+            ...prev,
+            lastEvent: interrupted ? 'turn-complete-interrupted' : 'turn-complete',
+            lastResponseHadAudio: receivedAudioRef.current || prev.lastResponseHadAudio
+        }));
+
+        if (pendingPromptRef.current) {
+            pendingPromptRef.current.resolve({
+                assistantText: latestAssistantTextRef.current,
+                transcriptText: latestTranscriptRef.current,
+                interrupted
+            });
+            pendingPromptRef.current = null;
+        }
+
+        receivedAudioRef.current = false;
+        logLiveDebug('finalizeTurn:done', {
+            interrupted,
+            nextTurnState: GEMINI_LIVE_TURN_STATES.IDLE
+        });
+    }, [completeTurnContext, pruneCompletedTurnArtifacts, setTurnDiagnostics, waitForPlaybackDrain]);
+
+    const scheduleReconnectAttempt = useCallback((details = {}) => {
+        if (closingReasonRef.current === 'cleanup') {
+            return;
+        }
+
+        if (reconnectTimerRef.current || reconnectAttemptRef.current >= 1) {
+            return;
+        }
+
+        const hasActiveSession = Boolean(
+            pendingPromptRef.current
+            || activeTurnRef.current
+            || isCapturing
+            || turnStateRef.current !== GEMINI_LIVE_TURN_STATES.IDLE
+        );
+
+        if (!hasActiveSession) {
+            return;
+        }
+
+        reconnectAttemptRef.current = 1;
+        setIsConnected(false);
+        setIsSpeaking(false);
+        setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.RECONNECTING, 'Reconnecting live session');
+        setDiagnostics((prev) => ({
+            ...prev,
+            lastEvent: 'reconnecting',
+            lastCloseCode: details.closeCode ? String(details.closeCode) : prev.lastCloseCode,
+            lastCloseReason: details.closeReason || prev.lastCloseReason
+        }));
+
+        reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
+
+            void (async () => {
+                try {
+                    const recovery = await reconnectLiveSessionRef.current({
+                        sessionId: sessionIdRef.current,
+                        archiveSessionId: lastConnectConfigRef.current?.archiveSessionId || sessionIdRef.current,
+                        ...safeClone(lastConnectConfigRef.current || {})
+                    });
+
+                    if (recovery?.ok) {
+                        reconnectAttemptRef.current = 0;
+                        setError(null);
+                        setLastInterrupted(true);
+                        setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.RECOVERED, 'Recovered and listening');
+                        setDiagnostics((prev) => ({
+                            ...prev,
+                            lastEvent: 'recovered',
+                            lastCloseCode: '',
+                            lastCloseReason: ''
+                        }));
+                        return;
+                    }
+
+                    throw new Error(recovery?.reason || 'Recovery failed');
+                } catch (reconnectErr) {
+                    reconnectAttemptRef.current = 0;
+                    const normalized = normalizeGeminiLiveClientError(
+                        reconnectErr,
+                        `${GEMINI_LIVE_PRODUCT_LABEL} connection dropped. Please try again.`
+                    );
+
+                    if (pendingPromptRef.current || activeTurnRef.current) {
+                        await finalizeTurn(true);
+                    }
+
+                    setError(normalized.message);
+                    setDiagnostics((prev) => ({
+                        ...prev,
+                        lastEvent: 'close-error',
+                        lastCloseReason: normalized.message,
+                        errorCategory: normalized.category
+                    }));
+                    setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, normalized.message);
+                }
+            })();
+        }, 250);
+    }, [finalizeTurn, isCapturing, setError, setIsConnected, setIsSpeaking, setTurnDiagnostics]);
 
     /* eslint-disable react-hooks/exhaustive-deps */
     const handleMessage = useCallback((message) => {
@@ -908,8 +1102,148 @@ export function useGeminiLive() {
             });
             void finalizeTurn(interrupted);
         }
-    }, [appendConversationEvent, appendTranscriptFragment, diagnostics, markTurnInterrupted]);
+    }, [appendConversationEvent, appendTranscriptFragment, diagnostics, finalizeTurn, markTurnInterrupted]);
     /* eslint-enable react-hooks/exhaustive-deps */
+
+    const handleTransportMessage = useCallback((message = {}) => {
+        if (message?.serverContent) {
+            handleMessage(message);
+            return;
+        }
+
+        const type = String(message?.type || '').trim();
+        if (!type) {
+            return;
+        }
+
+        setDiagnostics((prev) => ({
+            ...prev,
+            messagesReceived: prev.messagesReceived + 1,
+            lastEvent: type
+        }));
+
+        if (type === 'session-ready') {
+            setIsConnected(true);
+            setIsReady(true);
+            setUsesFallback(false);
+            setResolvedModel(message?.model || resolvedModelRef.current || 'worker-managed Gemini Live');
+            setModelStatus('ready');
+            setError(null);
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastEvent: 'open',
+                lastCloseReason: '',
+                modelStatus: 'ready'
+            }));
+            appendConversationEvent({
+                type: 'session-open',
+                phase: 'connected',
+                assistantText: latestAssistantTextRef.current,
+                transcriptText: latestTranscriptRef.current,
+                diagnostics: diagnosticsRef.current || diagnostics,
+                raw: safeClone(message)
+            });
+            flushPendingTurnContextSync(true);
+            return;
+        }
+
+        if (type === 'session-state' || type === 'analysis-started') {
+            if (message?.phase === 'analysis') {
+                setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.PROCESSING, 'Running post-interview analysis');
+            }
+
+            if (message?.analysisStatus) {
+                setDiagnostics((prev) => ({
+                    ...prev,
+                    lastEvent: type,
+                    lastCloseReason: '',
+                    analysisStatus: message.analysisStatus
+                }));
+            }
+            return;
+        }
+
+        if (type === 'session-error') {
+            const reason = message?.message || 'Live session failed';
+            const category = message?.category || classifyGeminiLiveError({
+                code: message?.code || message?.status || message?.statusCode || '',
+                message: reason
+            });
+            if (category === GEMINI_LIVE_ERROR_CATEGORIES.CONNECTION_DROPPED) {
+                closingReasonRef.current = 'reconnect';
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    try {
+                        wsRef.current.close(1012, 'reconnect');
+                    } catch {
+                        // ignore close errors; onclose will handle the reconnect path.
+                    }
+                }
+                return;
+            }
+            setIsSpeaking(false);
+            if (pendingPromptRef.current || activeTurnRef.current) {
+                void finalizeTurn(true);
+            }
+            setIsConnected(false);
+            setError(reason);
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastEvent: 'error',
+                lastCloseReason: reason,
+                errorCategory: message?.category || GEMINI_LIVE_ERROR_CATEGORIES.UNKNOWN
+            }));
+            return;
+        }
+
+        if (type === 'session-complete') {
+            setIsConnected(false);
+            setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, 'Analysis complete');
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastEvent: 'analysis-complete',
+                lastCloseReason: ''
+            }));
+            return;
+        }
+
+        if (type === 'session-close') {
+            const category = classifyGeminiLiveError({
+                code: message?.closeCode || message?.code || '',
+                message: message?.closeReason || ''
+            });
+            if (category === GEMINI_LIVE_ERROR_CATEGORIES.CONNECTION_DROPPED) {
+                closingReasonRef.current = 'reconnect';
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    try {
+                        wsRef.current.close(1012, 'reconnect');
+                    } catch {
+                        // ignore close errors; onclose will handle the reconnect path.
+                    }
+                }
+                return;
+            }
+            setIsSpeaking(false);
+            if (pendingPromptRef.current || activeTurnRef.current) {
+                void finalizeTurn(true);
+            }
+            setIsConnected(false);
+            setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, 'Session closed');
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastEvent: 'close',
+                lastCloseReason: message?.closeReason || prev.lastCloseReason,
+                lastCloseCode: message?.closeCode || prev.lastCloseCode
+            }));
+            return;
+        }
+
+        if (type === 'pong') {
+            setDiagnostics((prev) => ({
+                ...prev,
+                lastEvent: 'pong'
+            }));
+        }
+    }, [appendConversationEvent, diagnostics, finalizeTurn, flushPendingTurnContextSync, handleMessage, setTurnDiagnostics]);
 
     const queueAudioPlayback = useCallback((base64Data, mimeType = '') => {
         const parsedAudioMimeType = parseGeminiAudioMimeType(mimeType);
@@ -999,73 +1333,15 @@ export function useGeminiLive() {
         return playbackScheduleRef.current;
     }, [setNormalizedError, trackPlaybackPromise]);
 
-    const finalizeTurn = useCallback(async (interrupted = false) => {
-        logLiveDebug('finalizeTurn:start', {
-            interrupted,
-            receivedAudio: receivedAudioRef.current,
-            assistantText: latestAssistantTextRef.current,
-            transcriptText: latestTranscriptRef.current,
-            turnState: turnStateRef.current
-        });
-        try {
-            await playbackScheduleRef.current;
-        } catch {
-            // ignore playback schedule errors
-        }
-
-        try {
-            await waitForPlaybackDrain();
-        } catch {
-            // ignore drain errors
-        }
-
-        setIsSpeaking(false);
-        if (activeTurnRef.current) {
-            completeTurnContext({
-                ...activeTurnRef.current,
-                interrupted: Boolean(interrupted || activeTurnRef.current.interrupted),
-                evaluation: activeTurnRef.current.evaluation || null,
-                force: true
-            });
-        }
-        activeTurnRef.current = null;
-        setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, interrupted ? 'Turn complete after interruption' : 'Turn complete');
-        setDiagnostics((prev) => ({
-            ...prev,
-            lastEvent: interrupted ? 'turn-complete-interrupted' : 'turn-complete',
-            lastResponseHadAudio: receivedAudioRef.current || prev.lastResponseHadAudio
-        }));
-
-        if (pendingPromptRef.current) {
-            pendingPromptRef.current.resolve({
-                assistantText: latestAssistantTextRef.current,
-                transcriptText: latestTranscriptRef.current,
-                interrupted
-            });
-            pendingPromptRef.current = null;
-        }
-
-        receivedAudioRef.current = false;
-        logLiveDebug('finalizeTurn:done', {
-            interrupted,
-            nextTurnState: GEMINI_LIVE_TURN_STATES.IDLE
-        });
-    }, [completeTurnContext, diagnostics, setTurnDiagnostics, waitForPlaybackDrain]);
-
     const connect = useCallback(async (config = {}) => {
-        if (!apiKey) {
-            const reason = 'Gemini API key is missing';
+        if (!workerApi.hasWorkerApi()) {
+            const reason = 'Worker API base URL is missing';
             setError(reason);
             return { ok: false, reason };
         }
 
-        const resolved = await ensureModelResolved();
-        if (!resolved.ok) {
-            return { ok: false, reason: resolved.reason, category: resolved.category };
-        }
-
-        if (sessionRef.current) {
-            return { ok: true, session: sessionRef.current, model: resolvedModelRef.current };
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            return { ok: true, session: wsRef.current, model: resolvedModelRef.current };
         }
 
         setIsConnecting(true);
@@ -1073,123 +1349,170 @@ export function useGeminiLive() {
         setLastInterrupted(false);
         closingReasonRef.current = '';
         lastConnectConfigRef.current = config;
+        const sessionId = config.sessionId || config.archiveSessionId || `live-${crypto.randomUUID()}`;
+        sessionIdRef.current = sessionId;
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+        resolvedModelRef.current = 'worker-managed Gemini Live';
+        setResolvedModel(resolvedModelRef.current);
         logLiveDebug('connect:start', {
-            requestedModel: resolvedModelRef.current || '(unresolved)',
-            hasSystemInstruction: Boolean(config?.systemInstruction)
+            sessionId,
+            hasSystemInstruction: Boolean(config?.systemInstruction),
+            attachExistingSession: Boolean(config.attachExistingSession)
         });
 
         try {
-            const session = await connectGeminiLiveSession({
-                ai: aiRef.current,
-                model: resolvedModelRef.current,
-                config: {
-                    systemInstruction: getAssistantPrompt(config)
-                },
-                callbacks: {
-                    onopen: () => {
-                        logLiveDebug('session:open', {
-                            model: resolvedModelRef.current,
-                            turnState: turnStateRef.current
-                        });
-                        setIsConnected(true);
-                        setDiagnostics((prev) => ({ ...prev, lastEvent: 'open', lastCloseReason: '' }));
-                        setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, 'Connected');
-                        appendConversationEvent({
-                            type: 'session-open',
-                            phase: 'connected',
-                            assistantText: latestAssistantTextRef.current,
-                            transcriptText: latestTranscriptRef.current,
-                            diagnostics: diagnosticsRef.current || diagnostics,
-                            raw: {
-                                model: resolvedModelRef.current,
-                                hasSystemInstruction: Boolean(config?.systemInstruction)
-                            }
-                        });
-                        flushPendingTurnContextSync(true);
-                    },
-                    onmessage: handleMessage,
-                    onerror: (event) => {
-                        const normalized = normalizeGeminiLiveClientError(event, `${GEMINI_LIVE_PRODUCT_LABEL} error`);
-                        logLiveDebug('session:error', {
-                            category: normalized.category,
-                            message: normalized.message,
-                            rawMessage: event?.message || event?.error?.message || ''
-                        });
-                        setError(normalized.message);
-                        setDiagnostics((prev) => ({
-                            ...prev,
-                            lastEvent: 'error',
-                            lastCloseReason: normalized.message,
-                            errorCategory: normalized.category
-                        }));
-                        setIsConnected(false);
-                    },
-                    onclose: (closeEvent) => {
-                        const closeCode = closeEvent?.code ?? closeEvent?.closeCode ?? closeEvent?.statusCode ?? '';
-                        const closeReason = closeEvent?.reason ?? closeEvent?.message ?? closeEvent?.error?.message ?? '';
-                        const isCleanupClose = closingReasonRef.current === 'cleanup';
-                        logLiveDebug('session:close', {
-                            closeCode: closeCode ? String(closeCode) : '',
-                            closeReason,
-                            isCleanupClose
-                        });
-                        sessionRef.current = null;
-                        pendingPromptRef.current = null;
-                        clearPlaybackState();
-                        setDiagnostics((prev) => ({
-                            ...prev,
-                            lastEvent: isCleanupClose ? 'cleanup-close' : 'close',
-                            lastCloseCode: closeCode ? String(closeCode) : prev.lastCloseCode,
-                            lastCloseReason: closeReason ? String(closeReason) : prev.lastCloseReason
-                        }));
-                        setIsConnected(false);
-                        setIsSpeaking(false);
-                        appendConversationEvent({
-                            type: isCleanupClose ? 'session-close-cleanup' : 'session-close',
-                            phase: isCleanupClose ? 'cleanup' : 'close',
-                            assistantText: latestAssistantTextRef.current,
-                            transcriptText: latestTranscriptRef.current,
-                            diagnostics: diagnosticsRef.current || diagnostics,
-                            raw: {
-                                closeCode: closeCode ? String(closeCode) : '',
-                                closeReason: closeReason ? String(closeReason) : '',
-                                isCleanupClose
-                            }
-                        });
+            const wsUrl = config.attachExistingSession
+                ? workerApi.getInterviewLiveSessionWebSocketUrl(sessionId)
+                : (await workerApi.createInterviewLiveSession({
+                    id: sessionId,
+                    archiveSessionId: config.archiveSessionId || sessionId
+                }))?.wsUrl || workerApi.getInterviewLiveSessionWebSocketUrl(sessionId);
+            const socket = new WebSocket(wsUrl);
+            wsRef.current = socket;
 
-                        if (isCleanupClose) {
-                            return;
-                        }
-
-                        const normalized = normalizeGeminiLiveClientError({
-                            code: closeCode,
-                            message: closeReason || closeEvent?.error?.message || `${GEMINI_LIVE_PRODUCT_LABEL} connection dropped`
-                        }, `${GEMINI_LIVE_PRODUCT_LABEL} connection dropped. Please try again.`);
-
-                        setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, normalized.message);
-                        setError(normalized.message);
-                        setDiagnostics((prev) => ({
-                            ...prev,
-                            lastEvent: 'close-error',
-                            lastCloseReason: normalized.message,
-                            errorCategory: normalized.category
-                        }));
+            await new Promise((resolve, reject) => {
+                socket.onopen = () => {
+                    logLiveDebug('session:open', { sessionId });
+                    setIsConnected(true);
+                    setIsReady(true);
+                    setUsesFallback(false);
+                    setDiagnostics((prev) => ({ ...prev, lastEvent: 'open', lastCloseReason: '', modelStatus: 'ready' }));
+                    setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, 'Connected');
+                    appendConversationEvent({
+                        type: 'session-open',
+                        phase: 'connected',
+                        assistantText: latestAssistantTextRef.current,
+                        transcriptText: latestTranscriptRef.current,
+                        diagnostics: diagnosticsRef.current || diagnostics,
+                        raw: { sessionId }
+                    });
+                    socket.send(JSON.stringify({
+                        type: 'start',
+                        config,
+                        systemInstruction: getAssistantPrompt(config)
+                    }));
+                    if (heartbeatTimerRef.current) {
+                        clearInterval(heartbeatTimerRef.current);
                     }
-                }
+                    heartbeatTimerRef.current = setInterval(() => {
+                        try {
+                            if (socket.readyState === WebSocket.OPEN) {
+                                socket.send(JSON.stringify({
+                                    type: 'ping',
+                                    timestamp: new Date().toISOString()
+                                }));
+                            }
+                        } catch {
+                            // Ignore heartbeat failures; onclose will handle real disconnects.
+                        }
+                    }, 25000);
+                    resolve(true);
+                };
+
+                socket.onmessage = (event) => {
+                    let payload = event?.data;
+                    if (typeof payload === 'string') {
+                        try {
+                            payload = JSON.parse(payload);
+                        } catch {
+                            payload = { type: 'text', text: payload };
+                        }
+                    }
+                    handleTransportMessage(payload || {});
+                };
+
+                socket.onerror = (event) => {
+                    const normalized = normalizeGeminiLiveClientError(event, `${GEMINI_LIVE_PRODUCT_LABEL} transport error`);
+                    const recoverable = socket.readyState === WebSocket.OPEN && normalized.category === GEMINI_LIVE_ERROR_CATEGORIES.CONNECTION_DROPPED;
+                    if (recoverable) {
+                        closingReasonRef.current = 'reconnect';
+                        try {
+                            socket.close(1012, 'reconnect');
+                        } catch {
+                            // ignore close errors; onclose will handle recovery.
+                        }
+                        return;
+                    }
+                    setError(normalized.message);
+                    setDiagnostics((prev) => ({
+                        ...prev,
+                        lastEvent: 'error',
+                        lastCloseReason: normalized.message,
+                        errorCategory: normalized.category
+                    }));
+                    reject(normalized);
+                };
+
+                socket.onclose = (closeEvent) => {
+                    const closeCode = closeEvent?.code ?? '';
+                    const closeReason = closeEvent?.reason ?? '';
+                    const isCleanupClose = closingReasonRef.current === 'cleanup';
+                    const shouldRecover = closingReasonRef.current === 'reconnect' || (!isCleanupClose && classifyGeminiLiveError({
+                        code: closeCode,
+                        message: closeReason
+                    }) === GEMINI_LIVE_ERROR_CATEGORIES.CONNECTION_DROPPED);
+                    wsRef.current = null;
+                    sessionRef.current = null;
+                    if (heartbeatTimerRef.current) {
+                        clearInterval(heartbeatTimerRef.current);
+                        heartbeatTimerRef.current = null;
+                    }
+                    setDiagnostics((prev) => ({
+                        ...prev,
+                        lastEvent: isCleanupClose ? 'cleanup-close' : 'close',
+                        lastCloseCode: closeCode ? String(closeCode) : prev.lastCloseCode,
+                        lastCloseReason: closeReason ? String(closeReason) : prev.lastCloseReason
+                    }));
+                    setIsConnected(false);
+                    setIsSpeaking(false);
+                    if (shouldRecover) {
+                        scheduleReconnectAttempt({
+                            closeCode,
+                            closeReason
+                        });
+                        return;
+                    }
+                    if (!isCleanupClose && (pendingPromptRef.current || activeTurnRef.current)) {
+                        void finalizeTurn(true);
+                    }
+                    appendConversationEvent({
+                        type: isCleanupClose ? 'session-close-cleanup' : 'session-close',
+                        phase: isCleanupClose ? 'cleanup' : 'close',
+                        assistantText: latestAssistantTextRef.current,
+                        transcriptText: latestTranscriptRef.current,
+                        diagnostics: diagnosticsRef.current || diagnostics,
+                        raw: {
+                            closeCode: closeCode ? String(closeCode) : '',
+                            closeReason: closeReason ? String(closeReason) : '',
+                            isCleanupClose
+                        }
+                    });
+
+                    if (isCleanupClose) {
+                        return;
+                    }
+
+                    const normalized = normalizeGeminiLiveClientError({
+                        code: closeCode,
+                        message: closeReason || `${GEMINI_LIVE_PRODUCT_LABEL} connection dropped`
+                    }, `${GEMINI_LIVE_PRODUCT_LABEL} connection dropped. Please try again.`);
+
+                    setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, normalized.message);
+                    setError(normalized.message);
+                    setDiagnostics((prev) => ({
+                        ...prev,
+                        lastEvent: 'close-error',
+                        lastCloseReason: normalized.message,
+                        errorCategory: normalized.category
+                    }));
+                };
             });
 
-            sessionRef.current = session;
-            setIsConnected(true);
-            setIsReady(true);
-            setUsesFallback(false);
-            setDiagnostics((prev) => ({
-                ...prev,
-                lastEvent: 'connected',
-                lastCloseCode: '',
-                lastCloseReason: '',
-                modelStatus: 'ready'
-            }));
-            return { ok: true, session, model: resolvedModelRef.current };
+            sessionRef.current = socket;
+            return { ok: true, session: socket, model: resolvedModelRef.current, sessionId };
         } catch (connectErr) {
             const normalized = normalizeGeminiLiveClientError(connectErr, `Failed to connect to ${GEMINI_LIVE_PRODUCT_LABEL}`);
             setError(normalized.message);
@@ -1204,16 +1527,32 @@ export function useGeminiLive() {
         } finally {
             setIsConnecting(false);
         }
-    }, [appendConversationEvent, apiKey, clearPlaybackState, diagnostics, ensureModelResolved, flushPendingTurnContextSync, handleMessage, setTurnDiagnostics]);
+    }, [appendConversationEvent, diagnostics, finalizeTurn, handleTransportMessage, scheduleReconnectAttempt, setTurnDiagnostics]);
+
+    reconnectLiveSessionRef.current = async (overrides = {}) => connect({
+        ...(lastConnectConfigRef.current || {}),
+        ...overrides,
+        attachExistingSession: true,
+        sessionId: overrides.sessionId || sessionIdRef.current || lastConnectConfigRef.current?.sessionId || lastConnectConfigRef.current?.archiveSessionId,
+        archiveSessionId: overrides.archiveSessionId || lastConnectConfigRef.current?.archiveSessionId || sessionIdRef.current
+    });
+
+    const sendTransportMessage = useCallback((payload) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+            throw new Error(`${GEMINI_LIVE_PRODUCT_LABEL} session unavailable`);
+        }
+
+        wsRef.current.send(JSON.stringify(payload));
+    }, []);
 
     const sendPrompt = useCallback(async (text) => {
         if (!text?.trim()) return '';
 
-        const connection = !sessionRef.current || !isConnected
+        const connection = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN
             ? await connect(lastConnectConfigRef.current || {})
-            : { ok: true, session: sessionRef.current };
+            : { ok: true, session: wsRef.current };
 
-        if (!connection.ok || !sessionRef.current || !isConnected) {
+        if (!connection.ok || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
             const reason = connection.reason || `${GEMINI_LIVE_PRODUCT_LABEL} session unavailable`;
             setError(reason);
             setDiagnostics((prev) => ({
@@ -1233,7 +1572,7 @@ export function useGeminiLive() {
         logLiveDebug('prompt:start', {
             text,
             model: resolvedModelRef.current,
-            connected: Boolean(sessionRef.current && isConnected)
+            connected: Boolean(wsRef.current && wsRef.current.readyState === WebSocket.OPEN)
         });
         setDiagnostics((prev) => ({
             ...prev,
@@ -1254,7 +1593,7 @@ export function useGeminiLive() {
             pendingPromptRef.current = { resolve };
         });
 
-        sendGeminiPrompt(sessionRef.current, text);
+        sendTransportMessage({ type: 'prompt', text });
 
         const timeoutResult = new Promise((resolve) => {
             setTimeout(() => resolve({
@@ -1298,19 +1637,19 @@ export function useGeminiLive() {
         setIsSpeaking(false);
         setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, 'Prompt complete');
         return result?.assistantText || latestAssistantTextRef.current || text;
-    }, [appendConversationEvent, clearPlaybackState, connect, diagnostics, isConnected, setTurnDiagnostics, waitForPlaybackDrain]);
+    }, [appendConversationEvent, clearPlaybackState, connect, diagnostics, sendTransportMessage, setTurnDiagnostics, waitForPlaybackDrain]);
 
     const startAnswerCapture = useCallback(async () => {
         logLiveDebug('answer-capture:start', {
-            hasSession: Boolean(sessionRef.current),
-            connected: isConnected,
+            hasSession: Boolean(wsRef.current),
+            connected: Boolean(wsRef.current && wsRef.current.readyState === WebSocket.OPEN),
             isCapturing
         });
-        const connection = (!sessionRef.current || !isConnected)
+        const connection = (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
             ? await connect(lastConnectConfigRef.current || {})
-            : { ok: true, session: sessionRef.current };
+            : { ok: true, session: wsRef.current };
 
-        if (!connection.ok || !sessionRef.current || !isConnected) {
+        if (!connection.ok || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
             return { ok: false, reason: connection.reason };
         }
 
@@ -1435,11 +1774,11 @@ export function useGeminiLive() {
                         downsampledSamples: downsampled.length,
                         bytes: pcmBytes.length
                     });
-                    void sendGeminiAudioChunk(
-                        sessionRef.current,
-                        pcmBytes,
-                        `audio/pcm;rate=${GEMINI_INPUT_SAMPLE_RATE}`
-                    );
+                    sendTransportMessage({
+                        type: 'audio-chunk',
+                        data: bytesToBase64(pcmBytes),
+                        mimeType: `audio/pcm;rate=${GEMINI_INPUT_SAMPLE_RATE}`
+                    });
                 } catch (streamErr) {
                     setNormalizedError(streamErr, `Failed to stream audio chunk to ${GEMINI_LIVE_PRODUCT_LABEL}`);
                 }
@@ -1461,7 +1800,7 @@ export function useGeminiLive() {
             cleanupCapture();
             return { ok: false, reason: message };
         }
-    }, [appendConversationEvent, cleanupCapture, connect, diagnostics, isCapturing, isConnected, setNormalizedError, setTurnDiagnostics, upsertTurnLedger]);
+    }, [appendConversationEvent, cleanupCapture, connect, diagnostics, isCapturing, setNormalizedError, setTurnDiagnostics, sendTransportMessage, upsertTurnLedger]);
 
     const stopAnswerCapture = useCallback(async () => {
         logLiveDebug('answer-capture:stop:start', {
@@ -1512,7 +1851,7 @@ export function useGeminiLive() {
         cleanupCapture();
 
         try {
-            void endGeminiAudioTurn(sessionRef.current);
+            sendTransportMessage({ type: 'audio-end' });
         } catch {
             // ignore end-stream errors
         }
@@ -1532,7 +1871,7 @@ export function useGeminiLive() {
             assistantText: lastAssistantText || latestAssistantTextRef.current || '',
             conversationSnapshot: snapshot
         };
-    }, [appendConversationEvent, buildConversationSnapshot, cleanupCapture, diagnostics, getActiveTurnTranscript, lastAssistantText, lastTranscript, setNormalizedError, setTurnDiagnostics, upsertTurnLedger]);
+    }, [appendConversationEvent, buildConversationSnapshot, cleanupCapture, diagnostics, getActiveTurnTranscript, lastAssistantText, lastTranscript, sendTransportMessage, setNormalizedError, setTurnDiagnostics, upsertTurnLedger]);
 
     const consumeLatestTranscript = useCallback((fallbackText = '') => {
         const transcript = lastTranscript || latestTranscriptRef.current || fallbackText || '';
@@ -1553,8 +1892,8 @@ export function useGeminiLive() {
         setLastInterrupted(false);
         setUsesFallback(false);
         setResolvedModel(resolvedModelRef.current);
-        setModelStatus(resolvedModelRef.current ? 'ready' : (apiKey ? 'checking' : 'missing'));
-        setIsReady(Boolean(apiKey && resolvedModelRef.current));
+        setModelStatus(resolvedModelRef.current ? 'ready' : (workerApi.hasWorkerApi() ? 'checking' : 'missing'));
+        setIsReady(Boolean(workerApi.hasWorkerApi() && resolvedModelRef.current));
         clearTurnState();
         setTurnDiagnostics(GEMINI_LIVE_TURN_STATES.IDLE, 'Idle');
         setDiagnostics({
@@ -1566,9 +1905,9 @@ export function useGeminiLive() {
             lastResponseHadAudio: false,
             turnState: GEMINI_LIVE_TURN_STATES.IDLE,
             turnStatus: describeGeminiLiveTurnState(GEMINI_LIVE_TURN_STATES.IDLE),
-            modelStatus: resolvedModelRef.current ? 'ready' : (apiKey ? 'checking' : 'missing')
+            modelStatus: resolvedModelRef.current ? 'ready' : (workerApi.hasWorkerApi() ? 'checking' : 'missing')
         });
-    }, [apiKey, clearTurnState, cleanupSession, setTurnDiagnostics]);
+    }, [clearTurnState, cleanupSession, setTurnDiagnostics]);
 
     return {
         isReady,
