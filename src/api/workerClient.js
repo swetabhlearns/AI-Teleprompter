@@ -121,6 +121,9 @@ export const workerApi = {
       signal: options.signal
     });
   },
+  submitFeedback(payload) {
+    return requestJson('/api/feedback', { body: payload, capability: true });
+  },
   listInterviewSessions() {
     return requestJson('/api/interview/sessions', { method: 'GET', capability: true });
   },

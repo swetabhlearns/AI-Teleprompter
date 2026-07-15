@@ -34,6 +34,14 @@ namespace_id = "9182403"
 limit = 6
 period = 60
 
+[[ratelimits]]
+name = "FEEDBACK_RATE_LIMITER"
+namespace_id = "9182404"
+
+[ratelimits.simple]
+limit = 20
+period = 60
+
 [[d1_databases]]
 binding = "DB"
 database_name = "ai-tracker-db"

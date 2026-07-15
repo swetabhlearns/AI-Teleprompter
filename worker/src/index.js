@@ -4,6 +4,7 @@ import { handleAiRoutes } from './routes/ai.js';
 import { handleInterviewSessions } from './routes/interviewSessions.js';
 import { handleInterviewLiveSessions } from './routes/interviewLiveSessions.js';
 import { enforceRequestProtection, protectionErrorResponse } from './lib/protection.js';
+import { handleFeedback } from './routes/feedback.js';
 
 function notFound() {
   return jsonResponse(
@@ -29,6 +30,7 @@ function buildRouteManifest() {
       'POST /api/transcribe',
       'POST /api/tts/sarvam',
       'POST /api/tts/elevenlabs/:voiceId?',
+      'POST /api/feedback',
       'GET /api/interview/sessions',
       'POST /api/interview/sessions',
       'PATCH /api/interview/sessions/:id',
@@ -76,6 +78,11 @@ export default {
       const interviewSessionsResponse = await handleInterviewSessions(request, env, url);
       if (interviewSessionsResponse) {
         return respond(interviewSessionsResponse);
+      }
+
+      const feedbackResponse = await handleFeedback(request, env, url);
+      if (feedbackResponse) {
+        return respond(feedbackResponse);
       }
 
       const interviewLiveSessionsResponse = await handleInterviewLiveSessions(request, env, url);

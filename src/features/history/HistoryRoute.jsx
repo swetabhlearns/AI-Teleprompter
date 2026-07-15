@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowRight, CheckCircle, ClockCounterClockwise, Fire, MagnifyingGlass, Trash, TrendUp } from '@phosphor-icons/react';
+import { ArrowRight, ChatCircleDots, CheckCircle, ClockCounterClockwise, Fire, MagnifyingGlass, ThumbsDown, ThumbsUp, Trash, TrendUp } from '@phosphor-icons/react';
 import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader, MagicSelect } from '../../components/ui/MagicUI';
+import { FeedbackDialog } from '../../components/FeedbackDialog';
+import { flushQueuedFeedback, loadFeedbackReceipts } from '../../utils/betaFeedback';
 import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
 import { buildNextPracticeRecommendation, loadPracticeGoal, savePracticeGoal } from '../../utils/practiceGoals';
 import { buildPracticeProfile } from '../../utils/practiceProfile';
@@ -28,6 +30,10 @@ export function HistoryRoute() {
   const [modeFilter, setModeFilter] = useState('all');
   const [goal, setGoal] = useState(loadPracticeGoal);
   const [drills, setDrills] = useState(loadPracticeDrills);
+  const [feedbackTarget, setFeedbackTarget] = useState(null);
+  const [feedbackReceipts, setFeedbackReceipts] = useState(loadFeedbackReceipts);
+  const closeFeedback = useCallback(() => setFeedbackTarget(null), []);
+  const refreshFeedbackReceipts = useCallback(() => setFeedbackReceipts(loadFeedbackReceipts()), []);
   const totals = useMemo(() => activities.reduce((result, item) => ({
     ...result,
     [item.mode]: (result[item.mode] || 0) + 1
@@ -61,6 +67,10 @@ export function HistoryRoute() {
     };
   }, []);
 
+  useEffect(() => {
+    void flushQueuedFeedback().then(refreshFeedbackReceipts);
+  }, [refreshFeedbackReceipts]);
+
   const handleClear = () => {
     if (!window.confirm('Clear the activity index from this browser? Your saved interview reports and scripts will not be deleted.')) return;
     clearPracticeHistory();
@@ -93,7 +103,12 @@ export function HistoryRoute() {
           eyebrow="Practice history"
           title="Your improvement trail"
           description="A lightweight index of work completed in this browser. Full scripts and interview reports stay in their existing libraries."
-          right={<MagicBadge>{activities.length} activities</MagicBadge>}
+          right={(
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <MagicBadge>{activities.length} activities</MagicBadge>
+              <MagicButton className="!min-h-10 !px-4 !py-2" variant="secondary" onClick={() => setFeedbackTarget({ kind: 'beta' })}><ChatCircleDots size={17} /> Share feedback</MagicButton>
+            </div>
+          )}
         />
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
           {Object.entries(MODE_LABELS).map(([mode, label]) => (
@@ -289,9 +304,22 @@ export function HistoryRoute() {
                   <h3 className="mt-3 truncate font-semibold text-slate-950">{activity.title || 'Practice session'}</h3>
                   <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{activity.summary || 'Completed practice activity.'}</p>
                 </div>
-                <MagicButton variant="secondary" onClick={() => openActivity(activity)}>
-                  {activity.actionLabel || 'Open mode'} <ArrowRight size={17} />
-                </MagicButton>
+                <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                  {feedbackReceipts[activity.id] ? (
+                    <MagicBadge className={feedbackReceipts[activity.id].status === 'queued' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}>
+                      {feedbackReceipts[activity.id].status === 'queued' ? 'Feedback queued' : 'Feedback sent'}
+                    </MagicBadge>
+                  ) : (
+                    <div className="flex items-center gap-1" aria-label={`Rate ${activity.title || 'this session'}`}>
+                      <span className="mr-1 text-xs text-slate-500">Useful?</span>
+                      <button type="button" aria-label="Helpful" onClick={() => setFeedbackTarget({ kind: 'session', sentiment: 'helpful', activity })} className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"><ThumbsUp size={17} /></button>
+                      <button type="button" aria-label="Needs work" onClick={() => setFeedbackTarget({ kind: 'session', sentiment: 'not_helpful', activity })} className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"><ThumbsDown size={17} /></button>
+                    </div>
+                  )}
+                  <MagicButton variant="secondary" onClick={() => openActivity(activity)}>
+                    {activity.actionLabel || 'Open mode'} <ArrowRight size={17} />
+                  </MagicButton>
+                </div>
               </article>
             ))}
             {filteredActivities.length === 0 ? (
@@ -300,6 +328,7 @@ export function HistoryRoute() {
           </div>
         </MagicCard>
       )}
+      {feedbackTarget ? <FeedbackDialog target={feedbackTarget} onClose={closeFeedback} onSubmitted={refreshFeedbackReceipts} /> : null}
     </div>
   );
 }

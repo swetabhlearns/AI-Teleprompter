@@ -79,6 +79,10 @@ export async function enforceRequestProtection(request, env, url) {
     return applyRateLimit(env.LIVE_RATE_LIMITER, actor, 'Too many live interview sessions were started. Try again in a minute.');
   }
 
+  if (url.pathname === '/api/feedback') {
+    return applyRateLimit(env.FEEDBACK_RATE_LIMITER, actor, 'Too many feedback submissions. Try again in a minute.');
+  }
+
   if (url.pathname === '/api/transcribe' || url.pathname.startsWith('/api/tts/elevenlabs')) {
     return applyRateLimit(env.MEDIA_RATE_LIMITER, actor, 'Too many audio requests. Try again in a minute.');
   }
