@@ -42,6 +42,7 @@ function CheckRow({ icon, title, check, action }) {
 
 export function InterviewPreflight({ config, onClose, onBegin, isStarting = false }) {
   const [checks, setChecks] = useState(INITIAL_CHECKS);
+  const [consentAccepted, setConsentAccepted] = useState(false);
   const initialChecksStartedRef = useRef(false);
   const summary = useMemo(() => getPreflightSummary(checks), [checks]);
 
@@ -114,8 +115,7 @@ export function InterviewPreflight({ config, onClose, onBegin, isStarting = fals
     initialChecksStartedRef.current = true;
     updateCheck('browser', getBrowserMediaReadiness(window));
     void checkWorker();
-    void checkMicrophone();
-  }, [checkMicrophone, checkWorker, updateCheck]);
+  }, [checkWorker, updateCheck]);
 
   return (
     <div className="flex flex-1 items-center justify-center py-4">
@@ -135,6 +135,10 @@ export function InterviewPreflight({ config, onClose, onBegin, isStarting = fals
         </div>
 
         <div className="space-y-3 p-6 md:p-8">
+          <label className="flex cursor-pointer gap-3 rounded-[18px] border border-sky-200 bg-sky-50/70 px-4 py-3 text-sm text-slate-700">
+            <input type="checkbox" className="mt-1 size-4" checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} />
+            <span>I understand that microphone audio is sent to Gemini and Groq for the live conversation and transcription. Raw audio is not stored; transcripts and analysis are stored until I delete them.</span>
+          </label>
           <CheckRow title="Browser audio" icon={<CheckCircle size={21} />} check={checks.browser} />
           <CheckRow
             title="Interview service"
@@ -146,7 +150,7 @@ export function InterviewPreflight({ config, onClose, onBegin, isStarting = fals
             title="Microphone"
             icon={<Microphone size={21} />}
             check={checks.microphone}
-            action={checks.microphone.status === PREFLIGHT_STATUS.FAILED ? <MagicButton variant="secondary" onClick={checkMicrophone}>Retry</MagicButton> : null}
+            action={checks.microphone.status !== PREFLIGHT_STATUS.PASSED ? <MagicButton variant="secondary" onClick={checkMicrophone} disabled={!consentAccepted || checks.microphone.status === PREFLIGHT_STATUS.CHECKING}>{checks.microphone.status === PREFLIGHT_STATUS.FAILED ? 'Retry' : 'Check microphone'}</MagicButton> : null}
           />
           <CheckRow
             title="Speaker"
@@ -164,7 +168,7 @@ export function InterviewPreflight({ config, onClose, onBegin, isStarting = fals
 
           <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
             <MagicButton variant="secondary" onClick={onClose} disabled={isStarting}>Back to setup</MagicButton>
-            <MagicButton onClick={onBegin} disabled={!summary.isReady || isStarting} className="!min-w-48">
+            <MagicButton onClick={onBegin} disabled={!consentAccepted || !summary.isReady || isStarting} className="!min-w-48">
               {isStarting ? 'Opening live session…' : 'Enter interview'}
             </MagicButton>
           </div>

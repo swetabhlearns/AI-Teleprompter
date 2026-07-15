@@ -1,4 +1,7 @@
 import { hasWorkerApi, getWorkerApiUrl, getWorkerWebSocketUrl } from '../utils/workerApi.js';
+import { getAnonymousCapabilityHeaders } from '../utils/anonymousIdentity.js';
+
+const liveSessionWebSocketUrls = new Map();
 
 async function parseJsonResponse(response) {
   const payload = await response.json().catch(() => null);
@@ -40,6 +43,7 @@ async function requestJson(pathname, { method = 'POST', body, headers = {}, sign
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...getAnonymousCapabilityHeaders(),
       ...headers
     },
     body: body == null ? undefined : JSON.stringify(body),
@@ -52,6 +56,7 @@ async function requestJson(pathname, { method = 'POST', body, headers = {}, sign
 async function requestMultipart(pathname, formData, { signal } = {}) {
   const response = await fetch(getWorkerApiUrl(pathname), {
     method: 'POST',
+    headers: getAnonymousCapabilityHeaders(),
     body: formData,
     signal
   });
@@ -64,6 +69,7 @@ async function requestBinary(pathname, { method = 'POST', body, headers = {}, si
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...getAnonymousCapabilityHeaders(),
       ...headers
     },
     body: body == null ? undefined : JSON.stringify(body),
@@ -130,8 +136,10 @@ export const workerApi = {
   deleteInterviewSession(id) {
     return requestJson(`/api/interview/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
-  createInterviewLiveSession(payload) {
-    return requestJson('/api/interview/live-sessions', { body: payload });
+  async createInterviewLiveSession(payload) {
+    const result = await requestJson('/api/interview/live-sessions', { body: payload });
+    if (result?.wsUrl && payload?.id) liveSessionWebSocketUrls.set(String(payload.id), result.wsUrl);
+    return result;
   },
   getInterviewLiveSession(id) {
     return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}`, { method: 'GET' });
@@ -146,6 +154,7 @@ export const workerApi = {
     return requestJson(`/api/interview/live-sessions/${encodeURIComponent(id)}/fail`, { body: payload });
   },
   getInterviewLiveSessionWebSocketUrl(id) {
-    return getWorkerWebSocketUrl(`/api/interview/live-sessions/${encodeURIComponent(id)}/ws`);
+    return liveSessionWebSocketUrls.get(String(id))
+      || getWorkerWebSocketUrl(`/api/interview/live-sessions/${encodeURIComponent(id)}/ws`);
   }
 };

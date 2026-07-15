@@ -79,7 +79,9 @@ function normalizeLiveSession(input = {}) {
     config,
     liveState,
     turnLog,
-    raw: input.raw && typeof input.raw === 'object' ? input.raw : {}
+    raw: input.raw && typeof input.raw === 'object' ? input.raw : {},
+    ownerHash: String(input.ownerHash || ''),
+    liveAccessTokenHash: String(input.liveAccessTokenHash || '')
   };
 }
 
@@ -706,11 +708,12 @@ export class InterviewLiveSessionDO {
         turnCount: interviewTurns.length,
         answeredTurnCount: answers.length
       },
+      ownerHash: this.liveSession?.ownerHash || '',
       raw: {
         analysisTranscript,
         analysisCompletedAt: nowIso()
       }
-    });
+    }, this.liveSession?.ownerHash || '');
   }
 
   async handleGeminiError(error) {
@@ -912,6 +915,10 @@ export class InterviewLiveSessionDO {
     }
 
     if (request.headers.get('upgrade') === 'websocket') {
+      const current = await this.loadLiveSessionRecord();
+      if (!current || !current.liveAccessTokenHash || url.searchParams.get('access_token_hash') !== current.liveAccessTokenHash) {
+        return jsonResponse({ ok: false, error: 'live_access_denied' }, { status: 403 });
+      }
       const WebSocketPairCtor = globalThis.WebSocketPair;
       if (!WebSocketPairCtor) {
         return jsonResponse({ ok: false, error: 'websocket_unavailable' }, { status: 501 });
@@ -946,6 +953,8 @@ export class InterviewLiveSessionDO {
       this.analysisStatus = String(payload?.analysisStatus || this.analysisStatus || 'idle');
 
       const session = await this.persistLiveSessionRecord({
+        ownerHash: String(payload?.ownerHash || ''),
+        liveAccessTokenHash: String(payload?.liveAccessTokenHash || ''),
         archiveSessionId: String(payload?.archiveSessionId || this.sessionId),
         status: String(payload?.status || 'active'),
         phase: this.phase,
@@ -966,6 +975,11 @@ export class InterviewLiveSessionDO {
         session,
         wsUrl: buildWebSocketUrl(request, this.sessionId)
       }, { status: 201 });
+    }
+
+    const current = await this.loadLiveSessionRecord();
+    if (!current || !current.ownerHash || url.searchParams.get('owner_hash') !== current.ownerHash) {
+      return jsonResponse({ ok: false, error: 'not_found' }, { status: 404 });
     }
 
     if (request.method === 'GET') {

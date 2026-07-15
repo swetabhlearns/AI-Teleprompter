@@ -143,6 +143,7 @@ export function normalizeInterviewSessionRecord(input = {}) {
 
   return {
     id: String(input.id || generateId()),
+    ownerHash: String(input.ownerHash || ''),
     version: Number(input.version) || 1,
     title: String(input.title || formatTitle(config)),
     mode: String(input.mode || config.interviewMode || 'live'),
@@ -193,6 +194,7 @@ function rowToSession(row) {
   return normalizeInterviewSessionRecord({
     ...raw,
     id: row.id,
+    ownerHash: row.owner_hash,
     version: row.version,
     title: row.title,
     mode: row.mode,
@@ -245,6 +247,7 @@ function sessionToRow(session) {
 
   return {
     id: session.id,
+    owner_hash: session.ownerHash || '',
     version: session.version || 1,
     title: session.title || '',
     mode: session.mode || 'live',
@@ -285,19 +288,20 @@ export async function requireDb(env) {
   return env.DB;
 }
 
-export async function listInterviewSessions(env) {
+export async function listInterviewSessions(env, ownerHash) {
   const db = await requireDb(env);
   const result = await db.prepare(
     `SELECT
-      id, version, title, mode, source, status, college, interview_type, interview_mode,
+      id, owner_hash, version, title, mode, source, status, college, interview_type, interview_mode,
       created_at, updated_at, ended_at, completed_at,
       config_json, processing_json, questions_json, answers_json, evaluations_json,
       turn_log_json, conversation_timeline_json, conversation_ledger_json,
       transcript_timeline_json, turn_ledger_json, live_diagnostics_json,
       session_summary_json, error_json, raw_json
     FROM interview_sessions
+    WHERE owner_hash = ?
     ORDER BY updated_at DESC, created_at DESC`
-  ).all();
+  ).bind(ownerHash).all();
 
   return (result.results || []).map(rowToSession).map((session) => ({
     ...sessionSummaryFromSession(session),
@@ -334,40 +338,40 @@ function sessionSummaryFromSession(session = {}) {
   };
 }
 
-export async function getInterviewSession(env, id) {
+export async function getInterviewSession(env, id, ownerHash) {
   if (!id) return null;
 
   const db = await requireDb(env);
   const result = await db.prepare(
     `SELECT
-      id, version, title, mode, source, status, college, interview_type, interview_mode,
+      id, owner_hash, version, title, mode, source, status, college, interview_type, interview_mode,
       created_at, updated_at, ended_at, completed_at,
       config_json, processing_json, questions_json, answers_json, evaluations_json,
       turn_log_json, conversation_timeline_json, conversation_ledger_json,
       transcript_timeline_json, turn_ledger_json, live_diagnostics_json,
       session_summary_json, error_json, raw_json
     FROM interview_sessions
-    WHERE id = ?`
-  ).bind(id).first();
+    WHERE id = ? AND owner_hash = ?`
+  ).bind(id, ownerHash).first();
 
   return rowToSession(result);
 }
 
-export async function saveInterviewSession(env, sessionInput = {}) {
+export async function saveInterviewSession(env, sessionInput = {}, ownerHash = sessionInput.ownerHash) {
   const db = await requireDb(env);
-  const nextSession = normalizeInterviewSessionRecord(sessionInput);
+  const nextSession = normalizeInterviewSessionRecord({ ...sessionInput, ownerHash });
   const row = sessionToRow(nextSession);
 
   await db.prepare(
     `INSERT INTO interview_sessions (
-      id, version, title, mode, source, status, college, interview_type, interview_mode,
+      id, owner_hash, version, title, mode, source, status, college, interview_type, interview_mode,
       created_at, updated_at, ended_at, completed_at,
       config_json, processing_json, questions_json, answers_json, evaluations_json,
       turn_log_json, conversation_timeline_json, conversation_ledger_json,
       transcript_timeline_json, turn_ledger_json, live_diagnostics_json,
       session_summary_json, error_json, raw_json
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
@@ -376,6 +380,7 @@ export async function saveInterviewSession(env, sessionInput = {}) {
     )
     ON CONFLICT(id) DO UPDATE SET
       version = excluded.version,
+      owner_hash = excluded.owner_hash,
       title = excluded.title,
       mode = excluded.mode,
       source = excluded.source,
@@ -402,6 +407,7 @@ export async function saveInterviewSession(env, sessionInput = {}) {
       raw_json = excluded.raw_json`
   ).bind(
     row.id,
+    row.owner_hash,
     row.version,
     row.title,
     row.mode,
@@ -433,11 +439,11 @@ export async function saveInterviewSession(env, sessionInput = {}) {
   return nextSession;
 }
 
-export async function deleteInterviewSession(env, id) {
+export async function deleteInterviewSession(env, id, ownerHash) {
   if (!id) return false;
 
   const db = await requireDb(env);
-  const result = await db.prepare('DELETE FROM interview_sessions WHERE id = ?').bind(id).run();
+  const result = await db.prepare('DELETE FROM interview_sessions WHERE id = ? AND owner_hash = ?').bind(id, ownerHash).run();
   return Number(result?.meta?.changes || 0) > 0;
 }
 
