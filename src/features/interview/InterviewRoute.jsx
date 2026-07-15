@@ -11,6 +11,7 @@ import { useGeminiLive } from '../../hooks/useGeminiLive';
 import { GEMINI_LIVE_TURN_STATES } from '../../utils/geminiLive';
 import { workerApi } from '../../api/workerClient';
 import { MagicBackground, MagicButton, MagicCard } from '../../components/ui/MagicUI';
+import { savePracticeActivity } from '../../utils/practiceHistory';
 
 export function InterviewRoute() {
   const navigate = useNavigate();
@@ -146,6 +147,22 @@ export function InterviewRoute() {
       });
     }
   }, [analysisState, interview.error, interview.state, runAnalysis]);
+
+  useEffect(() => {
+    if (analysisState !== 'completed' || !completedSession?.id) return;
+    const turnCount = completedSession?.sessionSummary?.turnCount
+      || completedSession?.conversationTimeline?.length
+      || completedSession?.answers?.length
+      || 0;
+    savePracticeActivity({
+      id: `interview:${completedSession.id}`,
+      mode: 'interview',
+      title: completedSession.title || `${completedSession?.config?.college || 'MBA'} interview`,
+      summary: `${turnCount} conversation turns reviewed. Coaching report is available in the interview archive.`,
+      actionLabel: 'Open report archive',
+      occurredAt: completedSession.completedAt || completedSession.updatedAt
+    });
+  }, [analysisState, completedSession]);
 
   const handleInterviewQuestionAsked = useCallback((question, questionIndex) => {
     const sessionId = currentArchiveSessionIdRef.current;

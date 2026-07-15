@@ -4,6 +4,7 @@ import ScriptRoute from './features/script/ScriptRoute';
 import { ExtemporeLiveRoute, ExtemporeSelectionRoute } from './features/extempore/ExtemporeRoute';
 import InterviewRoute from './features/interview/InterviewRoute';
 import PracticeRoute from './features/practice/PracticeRoute';
+import HistoryRoute from './features/history/HistoryRoute';
 
 const rootRoute = createRootRoute({
   component: AppShell
@@ -45,13 +46,20 @@ const practiceRoute = createRoute({
   component: PracticeRoute
 });
 
+const historyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'history',
+  component: HistoryRoute
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   scriptRoute,
   extemporeRoute,
   extemporeLiveRoute,
   interviewRoute,
-  practiceRoute
+  practiceRoute,
+  historyRoute
 ]);
 
 export const router = createRouter({

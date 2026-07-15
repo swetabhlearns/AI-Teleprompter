@@ -12,6 +12,7 @@ import {
 } from '@phosphor-icons/react';
 import { formatDuration } from '../utils/formatters';
 import { generateStutteringSummary } from '../utils/stutteringAnalyzer';
+import { savePracticeActivity } from '../utils/practiceHistory';
 import { useSarvamTTS } from '../hooks/useSarvamTTS';
 import { useExtemporeCoach } from '../hooks/useExtemporeCoach';
 import { useExtemporeSpeechTranscript } from '../hooks/useExtemporeSpeechTranscript';
@@ -746,6 +747,14 @@ function ExtemporePractice({
       durationMs
     });
 
+    savePracticeActivity({
+      id: `extempore:${crypto.randomUUID()}`,
+      mode: 'extempore',
+      title: currentTopic || 'Extempore practice',
+      summary: summary?.recommendedDrill || `${Math.round(durationMs / 1000)} seconds of speaking practice completed.`,
+      actionLabel: 'Practice another topic'
+    });
+
     setPendingData({
       blob: audioBlob,
       duration: durationMs,
@@ -756,7 +765,7 @@ function ExtemporePractice({
     });
     setPhase(EXT_STATES.REVIEW);
     return result;
-  }, [finalizeSession, onStopRecording, transcriptCapture, transcribeAudio]);
+  }, [currentTopic, finalizeSession, onStopRecording, transcriptCapture, transcribeAudio]);
 
   const handleRetry = useCallback(() => {
     resetLiveSession();

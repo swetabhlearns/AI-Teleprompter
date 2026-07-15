@@ -97,6 +97,9 @@ export function AppShell() {
                   <MagicDockLink to="/extempore" active={pathname.startsWith('/extempore')}>
                     Extempore
                   </MagicDockLink>
+                  <MagicDockLink to="/history" active={pathname.startsWith('/history')}>
+                    History
+                  </MagicDockLink>
                 </nav>
               </MagicDock>
             </div>

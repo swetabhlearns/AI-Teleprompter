@@ -1,5 +1,5 @@
 import { ArrowClockwise, CheckCircle, Clock, Export, WarningCircle } from '@phosphor-icons/react';
-import { buildInterviewReplayTurns } from '../utils/interviewArchive';
+import { buildInterviewReplayTurns, parseInterviewAnalysisSections } from '../utils/interviewArchive';
 import { MagicBadge, MagicButton, MagicCard, MagicSectionHeader } from './ui/MagicUI';
 
 function getAnalysisText(session) {
@@ -12,12 +12,17 @@ function getAnalysisText(session) {
 }
 
 function AnalysisCopy({ text }) {
-  const paragraphs = text.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
-  if (paragraphs.length === 0) return null;
+  const sections = parseInterviewAnalysisSections(text);
+  if (sections.length === 0) return null;
 
   return (
-    <div className="space-y-4 text-sm leading-7 text-slate-700">
-      {paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>)}
+    <div className="grid gap-4 md:grid-cols-2">
+      {sections.map((section, index) => (
+        <section key={`${index}-${section.title}`} className="rounded-[22px] border border-slate-200 bg-white/75 p-5">
+          <h3 className="text-sm font-semibold text-slate-950">{section.title}</h3>
+          <div className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-600">{section.body || 'No additional detail was provided.'}</div>
+        </section>
+      ))}
     </div>
   );
 }
