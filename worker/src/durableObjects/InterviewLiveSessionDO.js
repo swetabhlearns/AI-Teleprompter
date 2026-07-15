@@ -10,6 +10,7 @@ import { jsonResponse } from '../lib/http.js';
 import {
   saveInterviewSession
 } from '../lib/db.js';
+import { validateInterviewDuration } from '../lib/protection.js';
 
 const LIVE_SESSION_STORAGE_KEY = 'live-session';
 const DEFAULT_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
@@ -790,6 +791,7 @@ export class InterviewLiveSessionDO {
     const type = String(payload.type || '').trim();
 
     if (type === 'start') {
+      validateInterviewDuration(payload.config || {});
       this.config = payload.config && typeof payload.config === 'object' ? payload.config : this.config;
       this.systemInstruction = String(payload.systemInstruction || '').trim();
       this.phase = 'interview';

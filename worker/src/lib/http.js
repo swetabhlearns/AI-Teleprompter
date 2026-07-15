@@ -48,7 +48,7 @@ export function applyCors(response, request, env = {}) {
   });
 }
 
-export function errorResponse(code, message, status = 400, details = null) {
+export function errorResponse(code, message, status = 400, details = null, responseHeaders = {}) {
   return jsonResponse(
     {
       ok: false,
@@ -58,12 +58,47 @@ export function errorResponse(code, message, status = 400, details = null) {
         ...(details ? { details } : {})
       }
     },
-    { status }
+    { status, headers: responseHeaders }
   );
 }
 
-export function parseJsonBody(request) {
-  return request.json().catch(() => null);
+export async function parseJsonBody(request, maxBytes = 256 * 1024) {
+  if (!request.body) return null;
+
+  const reader = request.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        const error = new Error(`Request body exceeds the ${maxBytes} byte limit.`);
+        error.code = 'payload_too_large';
+        error.status = 413;
+        throw error;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
 }
 
 export function isUuidLike(value) {

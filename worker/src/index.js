@@ -3,6 +3,7 @@ import { InterviewLiveSessionDO } from './durableObjects/InterviewLiveSessionDO.
 import { handleAiRoutes } from './routes/ai.js';
 import { handleInterviewSessions } from './routes/interviewSessions.js';
 import { handleInterviewLiveSessions } from './routes/interviewLiveSessions.js';
+import { enforceRequestProtection, protectionErrorResponse } from './lib/protection.js';
 
 function notFound() {
   return jsonResponse(
@@ -64,6 +65,9 @@ export default {
         return respond(jsonResponse(buildRouteManifest()));
       }
 
+      const protectionResponse = await enforceRequestProtection(request, env, url);
+      if (protectionResponse) return respond(protectionResponse);
+
       const aiResponse = await handleAiRoutes(request, env, url);
       if (aiResponse) {
         return respond(aiResponse);
@@ -81,6 +85,8 @@ export default {
 
       return respond(notFound());
     } catch (error) {
+      const protectionResponse = protectionErrorResponse(error);
+      if (protectionResponse) return respond(protectionResponse);
       return respond(jsonResponse(
         {
           ok: false,

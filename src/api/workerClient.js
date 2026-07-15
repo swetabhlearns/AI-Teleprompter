@@ -98,22 +98,22 @@ export const workerApi = {
     return requestJson('/api', { method: 'GET' });
   },
   generateScript(payload) {
-    return requestJson('/api/script/generate', { body: buildCompletionPayload(payload) });
+    return requestJson('/api/script/generate', { body: buildCompletionPayload(payload), capability: true });
   },
   refineScript(payload) {
-    return requestJson('/api/script/refine', { body: buildCompletionPayload(payload) });
+    return requestJson('/api/script/refine', { body: buildCompletionPayload(payload), capability: true });
   },
   generateExtemporeTopics(payload) {
-    return requestJson('/api/extempore/topics', { body: buildCompletionPayload(payload) });
+    return requestJson('/api/extempore/topics', { body: buildCompletionPayload(payload), capability: true });
   },
   generateExtemporeCoachSuggestion(payload) {
-    return requestJson('/api/extempore/coach', { body: buildCompletionPayload(payload) });
+    return requestJson('/api/extempore/coach', { body: buildCompletionPayload(payload), capability: true });
   },
   transcribeAudio(formData, options = {}) {
     return requestMultipart('/api/transcribe', formData, options);
   },
   generateSarvamTts(payload, options = {}) {
-    return requestJson('/api/tts/sarvam', { body: payload, signal: options.signal });
+    return requestJson('/api/tts/sarvam', { body: payload, signal: options.signal, capability: true });
   },
   generateElevenLabsTts(voiceId, payload, options = {}) {
     return requestBinary(`/api/tts/elevenlabs/${encodeURIComponent(voiceId)}`, {

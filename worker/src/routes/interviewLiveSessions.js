@@ -3,6 +3,7 @@ import {
 } from '../lib/db.js';
 import { parseJsonBody } from '../lib/http.js';
 import { createLiveAccessToken, ownerErrorResponse, requireOwnerContext, sha256 } from '../lib/ownership.js';
+import { protectionErrorResponse, validateInterviewDuration } from '../lib/protection.js';
 
 function buildDurableObjectRequestUrl(request, sessionId, suffix = '', internalParams = {}) {
   const url = new URL(request.url);
@@ -50,6 +51,7 @@ export async function handleInterviewLiveSessions(request, env, url) {
       }
 
       const sessionId = String(payload.id || payload.sessionId || crypto.randomUUID());
+      validateInterviewDuration(payload.config || {});
       const liveAccessToken = createLiveAccessToken();
       const response = await forwardJsonToDurableObject(env, request, sessionId, '', {
         id: sessionId,
@@ -81,6 +83,8 @@ export async function handleInterviewLiveSessions(request, env, url) {
         headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
     } catch (error) {
+      const protectionResponse = protectionErrorResponse(error);
+      if (protectionResponse) return protectionResponse;
       return toInterviewSessionError(
         'live_session_create_failed',
         error?.message || 'Live interview session could not be created',
