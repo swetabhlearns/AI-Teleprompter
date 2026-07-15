@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import {
   buildInterviewReplayTurns,
   createInterviewArchiveSession,
-  summarizeInterviewArchiveSession
+  summarizeInterviewArchiveSession,
+  parseInterviewAnalysisSections
 } from '../src/utils/interviewArchive.js';
 import { saveInterviewSession } from '../worker/src/lib/db.js';
 
@@ -202,4 +203,13 @@ test('saveInterviewSession preserves the final analysis transcript in raw_json',
   const rawJson = JSON.parse(boundValues.at(-1));
   assert.equal(rawJson.analysisTranscript, 'Overall strong fit with clear strengths.');
   assert.equal(rawJson.analysisCompletedAt, '2026-04-21T09:10:00.000Z');
+});
+
+test('parseInterviewAnalysisSections turns numbered coaching output into review cards', () => {
+  const sections = parseInterviewAnalysisSections(`1. Overall assessment: Clear and credible.\n2. Key strengths:\nUsed specific evidence.\n3. Risks: Answers ran long.\n4. Recommendations:\nLead with the conclusion.`);
+
+  assert.equal(sections.length, 4);
+  assert.equal(sections[0].title, 'Overall assessment');
+  assert.equal(sections[0].body, 'Clear and credible.');
+  assert.match(sections[3].body, /Lead with the conclusion/);
 });

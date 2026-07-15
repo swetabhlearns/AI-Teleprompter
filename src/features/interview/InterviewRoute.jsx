@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, startTransition } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import InterviewSetup from '../../components/InterviewSetup';
 import InterviewSession from '../../components/InterviewSession';
 import InterviewPreflight from '../../components/InterviewPreflight';
@@ -11,9 +11,12 @@ import { useGeminiLive } from '../../hooks/useGeminiLive';
 import { GEMINI_LIVE_TURN_STATES } from '../../utils/geminiLive';
 import { workerApi } from '../../api/workerClient';
 import { MagicBackground, MagicButton, MagicCard } from '../../components/ui/MagicUI';
+import { savePracticeActivity } from '../../utils/practiceHistory';
+import { parseInterviewAnalysisSections } from '../../utils/interviewArchive';
 
 export function InterviewRoute() {
   const navigate = useNavigate();
+  const requestedReportId = useRouterState({ select: (state) => state.location.search?.report || '' });
   const interviewMode = 'live';
 
   const liveCaptureRef = useRef(null);
@@ -25,6 +28,7 @@ export function InterviewRoute() {
   const geminiTransitionHandledRef = useRef('');
   const archivedSessionFailedRef = useRef(null);
   const analysisRequestSentRef = useRef(false);
+  const openedReportRef = useRef('');
   const [analysisState, setAnalysisState] = useState('idle');
   const [analysisError, setAnalysisError] = useState('');
   const [completedSession, setCompletedSession] = useState(null);
@@ -147,6 +151,27 @@ export function InterviewRoute() {
     }
   }, [analysisState, interview.error, interview.state, runAnalysis]);
 
+  useEffect(() => {
+    if (analysisState !== 'completed' || !completedSession?.id) return;
+    const turnCount = completedSession?.sessionSummary?.turnCount
+      || completedSession?.conversationTimeline?.length
+      || completedSession?.answers?.length
+      || 0;
+    const analysisText = String(completedSession?.raw?.analysisTranscript || completedSession?.liveDiagnostics?.analysisTranscript || '');
+    const recommendation = parseInterviewAnalysisSections(analysisText)
+      .find((section) => /recommend|next|follow-up/i.test(section.title))?.body || '';
+    savePracticeActivity({
+      id: `interview:${completedSession.id}`,
+      mode: 'interview',
+      title: completedSession.title || `${completedSession?.config?.college || 'MBA'} interview`,
+      referenceId: completedSession.id,
+      summary: `${turnCount} conversation turns reviewed. Coaching report is available in the interview archive.`,
+      recommendation,
+      actionLabel: 'Open report archive',
+      occurredAt: completedSession.completedAt || completedSession.updatedAt
+    });
+  }, [analysisState, completedSession]);
+
   const handleInterviewQuestionAsked = useCallback((question, questionIndex) => {
     const sessionId = currentArchiveSessionIdRef.current;
     if (!sessionId || !question) return;
@@ -245,6 +270,27 @@ export function InterviewRoute() {
       console.warn('Failed to reuse archived interview:', err);
     }
   }, [geminiLive, interview, interviewArchive]);
+
+  const handleOpenArchive = useCallback(async (sessionId) => {
+    try {
+      const session = await interviewArchive.getSession(sessionId);
+      if (!session) return;
+      currentArchiveSessionIdRef.current = sessionId;
+      setCompletedSession(session);
+      setAnalysisError('');
+      setAnalysisState('completed');
+      setPreflightOpen(false);
+      interview.setState(INTERVIEW_STATES.COMPLETE);
+    } catch (err) {
+      console.warn('Failed to open archived interview report:', err);
+    }
+  }, [interview, interviewArchive]);
+
+  useEffect(() => {
+    if (!requestedReportId || openedReportRef.current === requestedReportId) return;
+    openedReportRef.current = requestedReportId;
+    void handleOpenArchive(requestedReportId);
+  }, [handleOpenArchive, requestedReportId]);
 
   const handleExportArchive = useCallback(async (sessionId) => {
     try {
@@ -460,6 +506,7 @@ export function InterviewRoute() {
           archiveLoading={interviewArchive.isLoading}
           archiveError={interviewArchive.error}
           onReuseArchive={handleReuseArchive}
+          onViewArchive={handleOpenArchive}
           onExportArchive={handleExportArchive}
         />
       )}

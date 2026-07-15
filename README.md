@@ -163,16 +163,16 @@ curl https://YOUR_WORKER_DOMAIN/health
 curl https://YOUR_WORKER_DOMAIN/api
 ```
 
-Then build the frontend with `VITE_API_BASE_URL` pointing to that Worker and deploy the generated `dist/` directory to the frontend host.
+Then build the frontend with `VITE_API_BASE_URL` pointing to that Worker and deploy the generated `dist/` directory to the frontend host. The beta operations and rollback procedures are documented in [`docs/BETA_OPERATIONS.md`](docs/BETA_OPERATIONS.md).
 
 The repository currently defines a `deploy:staging` npm script, but `worker/wrangler.toml` does not yet define a staging environment or staging D1 database. Do not use that command until those bindings are configured.
 
 ## Current limitations
 
-- There is no user authentication or per-user archive ownership.
-- Worker CORS currently permits every origin.
+- There is no account authentication; records use a random anonymous browser capability for ownership.
+- Clearing browser storage loses the capability needed to access or delete records created by that browser identity.
 - Extempore live practice is timed but does not capture audio.
-- Interview archives are shared at the configured database level because user accounts do not yet exist.
 - The production frontend bundle currently triggers Vite's large-chunk warning.
+- A stable custom domain and final reviewed legal documents are intentionally deferred during the limited beta.
 
 These limitations should be addressed before a public beta.

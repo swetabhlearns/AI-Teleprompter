@@ -4,6 +4,32 @@ import { workerApi } from '../api/workerClient.js';
 export const INTERVIEW_ARCHIVE_DB_NAME = 'ai-tracker-interview-archive';
 export const INTERVIEW_ARCHIVE_DB_VERSION = 1;
 export const INTERVIEW_ARCHIVE_STORE = 'interview-sessions';
+
+export function parseInterviewAnalysisSections(text = '') {
+    const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    const sections = [];
+    let current = null;
+
+    for (const line of lines) {
+        const headingWithBody = line.match(/^(?:#{1,3}\s*|\d+[.)]\s*)([^:]{3,80}):\s*(.+)$/);
+        const standaloneHeading = line.match(/^(?:#{1,3}\s*|\d+[.)]\s*)([^:]{3,80}):?$/);
+
+        if (headingWithBody || standaloneHeading) {
+            if (current) sections.push(current);
+            current = {
+                title: String((headingWithBody || standaloneHeading)[1]).trim(),
+                body: headingWithBody ? String(headingWithBody[2]).trim() : ''
+            };
+            continue;
+        }
+
+        if (!current) current = { title: 'Overall assessment', body: '' };
+        current.body = [current.body, line].filter(Boolean).join('\n');
+    }
+
+    if (current) sections.push(current);
+    return sections.filter((section) => section.title || section.body);
+}
 export const INTERVIEW_ARCHIVE_VERSION = 1;
 
 let dbPromise;

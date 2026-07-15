@@ -2,12 +2,56 @@ name = "ai-tracker-worker"
 main = "src/index.js"
 compatibility_date = "2026-04-21"
 
+[triggers]
+crons = ["17 2 * * *"]
+
 [observability]
 enabled = true
 
 [vars]
 APP_NAME = "AI Tracker"
 GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
+ALLOWED_ORIGINS = "https://*.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+
+[[ratelimits]]
+name = "AI_RATE_LIMITER"
+namespace_id = "9182401"
+
+[ratelimits.simple]
+limit = 30
+period = 60
+
+[[ratelimits]]
+name = "MEDIA_RATE_LIMITER"
+namespace_id = "9182402"
+
+[ratelimits.simple]
+limit = 60
+period = 60
+
+[[ratelimits]]
+name = "LIVE_RATE_LIMITER"
+namespace_id = "9182403"
+
+[ratelimits.simple]
+limit = 6
+period = 60
+
+[[ratelimits]]
+name = "FEEDBACK_RATE_LIMITER"
+namespace_id = "9182404"
+
+[ratelimits.simple]
+limit = 20
+period = 60
+
+[[ratelimits]]
+name = "TELEMETRY_RATE_LIMITER"
+namespace_id = "9182405"
+
+[ratelimits.simple]
+limit = 120
+period = 60
 
 [[d1_databases]]
 binding = "DB"

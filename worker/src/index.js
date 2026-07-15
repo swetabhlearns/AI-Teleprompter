@@ -1,8 +1,13 @@
-import { jsonResponse } from './lib/http.js';
+import { applyCors, jsonResponse } from './lib/http.js';
 import { InterviewLiveSessionDO } from './durableObjects/InterviewLiveSessionDO.js';
 import { handleAiRoutes } from './routes/ai.js';
 import { handleInterviewSessions } from './routes/interviewSessions.js';
 import { handleInterviewLiveSessions } from './routes/interviewLiveSessions.js';
+import { enforceRequestProtection, protectionErrorResponse } from './lib/protection.js';
+import { handleFeedback } from './routes/feedback.js';
+import { handleEvents } from './routes/events.js';
+import { handleDataRights } from './routes/dataRights.js';
+import { enforceRetention } from './lib/retention.js';
 
 function notFound() {
   return jsonResponse(
@@ -20,6 +25,7 @@ function buildRouteManifest() {
     service: 'ai-tracker-worker',
     routes: [
       'GET /health',
+      'GET /ready',
       'GET /api',
       'POST /api/script/generate',
       'POST /api/script/refine',
@@ -28,6 +34,9 @@ function buildRouteManifest() {
       'POST /api/transcribe',
       'POST /api/tts/sarvam',
       'POST /api/tts/elevenlabs/:voiceId?',
+      'POST /api/feedback',
+      'POST /api/events',
+      'DELETE /api/data',
       'GET /api/interview/sessions',
       'POST /api/interview/sessions',
       'PATCH /api/interview/sessions/:id',
@@ -44,51 +53,81 @@ function buildRouteManifest() {
 
 export default {
   async fetch(request, env) {
+    const respond = (response) => applyCors(response, request, env);
     try {
       const url = new URL(request.url);
 
       if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-            'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-            'Access-Control-Max-Age': '86400'
-          }
-        });
+        return respond(new Response(null, { status: 204 }));
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
-        return jsonResponse({
+        return respond(jsonResponse({
           ok: true,
           service: env?.APP_NAME || 'AI Tracker',
           status: 'healthy'
-        });
+        }));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/ready') {
+        try {
+          const database = await env.DB.prepare('SELECT 1 AS ready').first();
+          return respond(jsonResponse({
+            ok: true,
+            service: env?.APP_NAME || 'AI Tracker',
+            status: database?.ready === 1 ? 'healthy' : 'degraded'
+          }, { status: database?.ready === 1 ? 200 : 503 }));
+        } catch (error) {
+          console.error(JSON.stringify({
+            message: 'readiness_check_failed',
+            error: error instanceof Error ? error.message : String(error)
+          }));
+          return respond(jsonResponse({ ok: false, status: 'degraded' }, { status: 503 }));
+        }
       }
 
       if (request.method === 'GET' && url.pathname === '/api') {
-        return jsonResponse(buildRouteManifest());
+        return respond(jsonResponse(buildRouteManifest()));
       }
+
+      const protectionResponse = await enforceRequestProtection(request, env, url);
+      if (protectionResponse) return respond(protectionResponse);
 
       const aiResponse = await handleAiRoutes(request, env, url);
       if (aiResponse) {
-        return aiResponse;
+        return respond(aiResponse);
       }
 
       const interviewSessionsResponse = await handleInterviewSessions(request, env, url);
       if (interviewSessionsResponse) {
-        return interviewSessionsResponse;
+        return respond(interviewSessionsResponse);
+      }
+
+      const feedbackResponse = await handleFeedback(request, env, url);
+      if (feedbackResponse) {
+        return respond(feedbackResponse);
+      }
+
+      const eventsResponse = await handleEvents(request, env, url);
+      if (eventsResponse) {
+        return respond(eventsResponse);
+      }
+
+      const dataRightsResponse = await handleDataRights(request, env, url);
+      if (dataRightsResponse) {
+        return respond(dataRightsResponse);
       }
 
       const interviewLiveSessionsResponse = await handleInterviewLiveSessions(request, env, url);
       if (interviewLiveSessionsResponse) {
-        return interviewLiveSessionsResponse;
+        return respond(interviewLiveSessionsResponse);
       }
 
-      return notFound();
+      return respond(notFound());
     } catch (error) {
-      return jsonResponse(
+      const protectionResponse = protectionErrorResponse(error);
+      if (protectionResponse) return respond(protectionResponse);
+      return respond(jsonResponse(
         {
           ok: false,
           error: {
@@ -97,8 +136,18 @@ export default {
           }
         },
         { status: 500 }
-      );
+      ));
     }
+  },
+
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(enforceRetention(env).catch((error) => {
+      console.error(JSON.stringify({
+        message: 'retention_failed',
+        error: error instanceof Error ? error.message : String(error)
+      }));
+      throw error;
+    }));
   }
 };
 

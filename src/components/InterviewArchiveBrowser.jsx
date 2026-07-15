@@ -17,6 +17,7 @@ export function InterviewArchiveBrowser({
     sessions = [],
     isLoading = false,
     error = null,
+    onView,
     onReuse,
     onExport,
     onDelete
@@ -76,9 +77,19 @@ export function InterviewArchiveBrowser({
                             </div>
 
                             <div className="mt-4 flex flex-wrap gap-2">
+                                {session.status === 'completed' ? (
+                                    <MagicButton
+                                        type="button"
+                                        onClick={() => onView?.(session.id)}
+                                        className="!min-h-10 !px-4 !py-2 text-sm"
+                                    >
+                                        View Report
+                                    </MagicButton>
+                                ) : null}
                                 <MagicButton
                                     type="button"
                                     onClick={() => onReuse?.(session.id)}
+                                    variant="secondary"
                                     className="!min-h-10 !px-4 !py-2 text-sm"
                                 >
                                     Reuse Setup

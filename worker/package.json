@@ -8,5 +8,8 @@
     "deploy": "npx wrangler deploy",
     "deploy:staging": "npx wrangler deploy --env staging",
     "logs": "npx wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.111.0"
   }
 }

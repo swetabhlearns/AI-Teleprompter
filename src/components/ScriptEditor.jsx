@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useGroq } from '../hooks/useGroq';
 import { showOatToast } from '../utils/oat';
+import { savePracticeActivity } from '../utils/practiceHistory';
 import {
   MagicButton,
   MagicCard,
@@ -120,6 +121,15 @@ export function ScriptEditor({
     const updated = [newScript, ...savedScripts].slice(0, 20);
     setSavedScripts(updated);
     saveScriptsToStorage(updated);
+    savePracticeActivity({
+      id: `script:${newScript.id}`,
+      mode: 'script',
+      title,
+      summary: `${wordCount} words saved for teleprompter practice.`,
+      recommendation: 'Rehearse this script once for pacing, then refine the two least natural sentences.',
+      actionLabel: 'Open library',
+      occurredAt: newScript.createdAt
+    });
     captureToast(`"${title}" saved to your library`);
   }, [captureToast, script, savedScripts, topic, wordCount]);
 
