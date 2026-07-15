@@ -83,6 +83,10 @@ export async function enforceRequestProtection(request, env, url) {
     return applyRateLimit(env.FEEDBACK_RATE_LIMITER, actor, 'Too many feedback submissions. Try again in a minute.');
   }
 
+  if (url.pathname === '/api/events') {
+    return applyRateLimit(env.TELEMETRY_RATE_LIMITER, actor, 'Too many operational events. Try again in a minute.');
+  }
+
   if (url.pathname === '/api/transcribe' || url.pathname.startsWith('/api/tts/elevenlabs')) {
     return applyRateLimit(env.MEDIA_RATE_LIMITER, actor, 'Too many audio requests. Try again in a minute.');
   }

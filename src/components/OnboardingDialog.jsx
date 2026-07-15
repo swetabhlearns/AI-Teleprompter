@@ -5,6 +5,7 @@ import { MagicBadge, MagicButton, MagicSelect } from './ui/MagicUI';
 import { buildNextPracticeRecommendation, savePracticeGoal } from '../utils/practiceGoals';
 import { startPracticeDrill } from '../utils/practiceDrills';
 import { saveOnboardingState } from '../utils/onboarding';
+import { trackBetaEvent } from '../utils/betaTelemetry';
 
 const GOALS = [
   {
@@ -58,6 +59,7 @@ export function OnboardingDialog({ onClose }) {
     const handleCancel = (event) => {
       event.preventDefault();
       saveOnboardingState({ status: 'dismissed' });
+      void trackBetaEvent('onboarding_dismissed');
       onClose();
     };
     dialog.addEventListener('cancel', handleCancel);
@@ -69,12 +71,14 @@ export function OnboardingDialog({ onClose }) {
 
   const skip = () => {
     saveOnboardingState({ status: 'dismissed' });
+    void trackBetaEvent('onboarding_dismissed');
     onClose();
   };
 
   const createPlan = () => {
     savePracticeGoal({ focusMode, weeklyTarget });
     saveOnboardingState({ status: 'completed' });
+    void trackBetaEvent('onboarding_completed', { mode: focusMode });
     setStep('ready');
   };
 

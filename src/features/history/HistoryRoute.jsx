@@ -4,6 +4,7 @@ import { ArrowRight, ChatCircleDots, CheckCircle, ClockCounterClockwise, Fire, M
 import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader, MagicSelect } from '../../components/ui/MagicUI';
 import { FeedbackDialog } from '../../components/FeedbackDialog';
 import { flushQueuedFeedback, loadFeedbackReceipts } from '../../utils/betaFeedback';
+import { trackBetaEvent } from '../../utils/betaTelemetry';
 import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
 import { buildNextPracticeRecommendation, loadPracticeGoal, savePracticeGoal } from '../../utils/practiceGoals';
 import { buildPracticeProfile } from '../../utils/practiceProfile';
@@ -88,11 +89,13 @@ export function HistoryRoute() {
   const updateGoal = (patch) => {
     const next = savePracticeGoal({ ...goal, ...patch });
     setGoal(next);
+    void trackBetaEvent('practice_goal_updated', { mode: next.focusMode === 'balanced' ? '' : next.focusMode });
   };
 
   const startRecommendedDrill = () => {
     const drill = startPracticeDrill(recommendation);
     if (drill) setDrills(loadPracticeDrills());
+    if (drill) void trackBetaEvent('drill_started', { mode: recommendation.mode });
     void navigate({ to: MODE_PATHS[recommendation.mode] });
   };
 

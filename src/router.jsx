@@ -8,6 +8,7 @@ const ScriptRoute = lazy(() => import('./features/script/ScriptRoute'));
 const InterviewRoute = lazy(() => import('./features/interview/InterviewRoute'));
 const PracticeRoute = lazy(() => import('./features/practice/PracticeRoute'));
 const HistoryRoute = lazy(() => import('./features/history/HistoryRoute'));
+const PrivacyRoute = lazy(() => import('./features/privacy/PrivacyRoute'));
 const ExtemporeSelectionRoute = lazy(() =>
   import('./features/extempore/ExtemporeRoute').then((module) => ({
     default: module.ExtemporeSelectionRoute
@@ -68,6 +69,12 @@ const historyRoute = createRoute({
   component: () => <RouteSuspense><HistoryRoute /></RouteSuspense>
 });
 
+const privacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'privacy',
+  component: () => <RouteSuspense><PrivacyRoute /></RouteSuspense>
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   scriptRoute,
@@ -75,7 +82,8 @@ const routeTree = rootRoute.addChildren([
   extemporeLiveRoute,
   interviewRoute,
   practiceRoute,
-  historyRoute
+  historyRoute,
+  privacyRoute
 ]);
 
 export const router = createRouter({

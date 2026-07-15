@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Outlet, useRouterState } from '@tanstack/react-router';
+import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useAppStore } from '../stores/appStore';
 import { workerApi } from '../api/workerClient.js';
 import { OnboardingDialog } from '../components/OnboardingDialog';
 import { shouldShowOnboarding } from '../utils/onboarding';
+import { trackBetaEvent } from '../utils/betaTelemetry';
 import {
   MagicBackground,
   MagicDock,
@@ -32,7 +33,23 @@ export function AppShell() {
 
   useEffect(() => {
     setActiveRoute(pathname);
+    void trackBetaEvent('page_view', { route: pathname });
   }, [pathname, setActiveRoute]);
+
+  useEffect(() => {
+    const handleError = (event) => {
+      void trackBetaEvent('client_error', { route: window.location.pathname, error: event.error });
+    };
+    const handleRejection = (event) => {
+      void trackBetaEvent('client_error', { route: window.location.pathname, error: event.reason });
+    };
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
 
   useEffect(() => {
     setShellReady(true);
@@ -128,6 +145,10 @@ export function AppShell() {
             <Outlet />
           </div>
         </main>
+
+        <footer className="px-4 pb-28 text-center md:pb-6">
+          <Link to="/privacy" className="text-xs font-medium text-slate-500 underline-offset-4 hover:text-slate-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40">Privacy &amp; data</Link>
+        </footer>
 
         <MagicDock className="fixed inset-x-3 bottom-3 z-50 rounded-[24px] !px-2 !py-2 md:hidden">
           <nav className="grid grid-cols-4 gap-1" aria-label="Primary mobile navigation">

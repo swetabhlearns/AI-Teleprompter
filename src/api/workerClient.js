@@ -92,7 +92,7 @@ function buildCompletionPayload({ model, messages, temperature, max_tokens, resp
 export const workerApi = {
   hasWorkerApi,
   getHealth() {
-    return requestJson('/health', { method: 'GET' });
+    return requestJson('/ready', { method: 'GET' });
   },
   getManifest() {
     return requestJson('/api', { method: 'GET' });
@@ -123,6 +123,9 @@ export const workerApi = {
   },
   submitFeedback(payload) {
     return requestJson('/api/feedback', { body: payload, capability: true });
+  },
+  submitEvent(payload) {
+    return requestJson('/api/events', { body: payload, capability: true });
   },
   listInterviewSessions() {
     return requestJson('/api/interview/sessions', { method: 'GET', capability: true });

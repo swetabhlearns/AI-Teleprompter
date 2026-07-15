@@ -5,6 +5,7 @@ import { handleInterviewSessions } from './routes/interviewSessions.js';
 import { handleInterviewLiveSessions } from './routes/interviewLiveSessions.js';
 import { enforceRequestProtection, protectionErrorResponse } from './lib/protection.js';
 import { handleFeedback } from './routes/feedback.js';
+import { handleEvents } from './routes/events.js';
 
 function notFound() {
   return jsonResponse(
@@ -22,6 +23,7 @@ function buildRouteManifest() {
     service: 'ai-tracker-worker',
     routes: [
       'GET /health',
+      'GET /ready',
       'GET /api',
       'POST /api/script/generate',
       'POST /api/script/refine',
@@ -31,6 +33,7 @@ function buildRouteManifest() {
       'POST /api/tts/sarvam',
       'POST /api/tts/elevenlabs/:voiceId?',
       'POST /api/feedback',
+      'POST /api/events',
       'GET /api/interview/sessions',
       'POST /api/interview/sessions',
       'PATCH /api/interview/sessions/:id',
@@ -63,6 +66,23 @@ export default {
         }));
       }
 
+      if (request.method === 'GET' && url.pathname === '/ready') {
+        try {
+          const database = await env.DB.prepare('SELECT 1 AS ready').first();
+          return respond(jsonResponse({
+            ok: true,
+            service: env?.APP_NAME || 'AI Tracker',
+            status: database?.ready === 1 ? 'healthy' : 'degraded'
+          }, { status: database?.ready === 1 ? 200 : 503 }));
+        } catch (error) {
+          console.error(JSON.stringify({
+            message: 'readiness_check_failed',
+            error: error instanceof Error ? error.message : String(error)
+          }));
+          return respond(jsonResponse({ ok: false, status: 'degraded' }, { status: 503 }));
+        }
+      }
+
       if (request.method === 'GET' && url.pathname === '/api') {
         return respond(jsonResponse(buildRouteManifest()));
       }
@@ -83,6 +103,11 @@ export default {
       const feedbackResponse = await handleFeedback(request, env, url);
       if (feedbackResponse) {
         return respond(feedbackResponse);
+      }
+
+      const eventsResponse = await handleEvents(request, env, url);
+      if (eventsResponse) {
+        return respond(eventsResponse);
       }
 
       const interviewLiveSessionsResponse = await handleInterviewLiveSessions(request, env, url);

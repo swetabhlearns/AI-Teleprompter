@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle, ChatCircleDots, ThumbsDown, ThumbsUp } from '@phosphor-icons/react';
 import { MagicButton, MagicSelect, MagicTextarea } from './ui/MagicUI';
 import { submitBetaFeedback } from '../utils/betaFeedback';
+import { trackBetaEvent } from '../utils/betaTelemetry';
 
 const MODE_LABELS = { script: 'Script', interview: 'Interview', extempore: 'Extempore' };
 
@@ -46,6 +47,7 @@ export function FeedbackDialog({ target, onClose, onSubmitted }) {
         message
       });
       setStatus(result.status);
+      if (result.status === 'sent') void trackBetaEvent('feedback_submitted', { mode: target.activity?.mode || '' });
       onSubmitted(result);
     } catch (submitError) {
       setStatus('idle');

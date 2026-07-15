@@ -42,6 +42,14 @@ namespace_id = "9182404"
 limit = 20
 period = 60
 
+[[ratelimits]]
+name = "TELEMETRY_RATE_LIMITER"
+namespace_id = "9182405"
+
+[ratelimits.simple]
+limit = 120
+period = 60
+
 [[d1_databases]]
 binding = "DB"
 database_name = "ai-tracker-db"
