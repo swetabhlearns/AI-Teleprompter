@@ -23,6 +23,7 @@ export function InterviewSetup({
     archiveLoading = false,
     archiveError = null,
     onReuseArchive,
+    onViewArchive,
     onExportArchive,
     onDeleteArchive
 }) {
@@ -290,6 +291,7 @@ export function InterviewSetup({
                 isLoading={archiveLoading}
                 error={archiveError}
                 onReuse={onReuseArchive}
+                onView={onViewArchive}
                 onExport={onExportArchive}
                 onDelete={onDeleteArchive}
             />

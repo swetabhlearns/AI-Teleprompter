@@ -37,6 +37,9 @@ const extemporeLiveRoute = createRoute({
 const interviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: 'interview',
+  validateSearch: (search) => ({
+    report: typeof search.report === 'string' ? search.report : undefined
+  }),
   component: InterviewRoute
 });
 

@@ -46,3 +46,32 @@ export function clearPracticeHistory(storage) {
     return false;
   }
 }
+
+export function summarizePracticeActivities(activities = [], now = new Date()) {
+  const currentTime = new Date(now).getTime();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const counts = {};
+  const activeDays = new Set();
+  let recentCount = 0;
+  let previousCount = 0;
+
+  for (const activity of activities) {
+    counts[activity.mode] = (counts[activity.mode] || 0) + 1;
+    const timestamp = new Date(activity.occurredAt || 0).getTime();
+    if (!Number.isFinite(timestamp)) continue;
+    activeDays.add(new Date(timestamp).toISOString().slice(0, 10));
+    const age = currentTime - timestamp;
+    if (age >= 0 && age < sevenDays) recentCount += 1;
+    else if (age >= sevenDays && age < sevenDays * 2) previousCount += 1;
+  }
+
+  const mostPracticedMode = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  return {
+    activeDays: activeDays.size,
+    recentCount,
+    previousCount,
+    recentDelta: recentCount - previousCount,
+    mostPracticedMode,
+    counts
+  };
+}

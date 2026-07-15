@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowRight, ClockCounterClockwise, Trash } from '@phosphor-icons/react';
-import { MagicBadge, MagicButton, MagicCard, MagicSectionHeader } from '../../components/ui/MagicUI';
-import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT } from '../../utils/practiceHistory';
+import { ArrowRight, ClockCounterClockwise, MagnifyingGlass, Trash } from '@phosphor-icons/react';
+import { MagicBadge, MagicButton, MagicCard, MagicInput, MagicSectionHeader } from '../../components/ui/MagicUI';
+import { clearPracticeHistory, loadPracticeActivities, PRACTICE_HISTORY_EVENT, summarizePracticeActivities } from '../../utils/practiceHistory';
 
 const MODE_LABELS = { script: 'Script', interview: 'Interview', extempore: 'Extempore' };
 const MODE_PATHS = { script: '/script', interview: '/interview', extempore: '/extempore' };
@@ -15,10 +15,21 @@ function formatDate(value) {
 export function HistoryRoute() {
   const navigate = useNavigate();
   const [activities, setActivities] = useState(loadPracticeActivities);
+  const [query, setQuery] = useState('');
+  const [modeFilter, setModeFilter] = useState('all');
   const totals = useMemo(() => activities.reduce((result, item) => ({
     ...result,
     [item.mode]: (result[item.mode] || 0) + 1
   }), {}), [activities]);
+  const insights = useMemo(() => summarizePracticeActivities(activities), [activities]);
+  const filteredActivities = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return activities.filter((activity) => {
+      if (modeFilter !== 'all' && activity.mode !== modeFilter) return false;
+      if (!normalizedQuery) return true;
+      return `${activity.title || ''} ${activity.summary || ''}`.toLowerCase().includes(normalizedQuery);
+    });
+  }, [activities, modeFilter, query]);
 
   useEffect(() => {
     const refresh = () => setActivities(loadPracticeActivities());
@@ -34,6 +45,14 @@ export function HistoryRoute() {
     if (!window.confirm('Clear the activity index from this browser? Your saved interview reports and scripts will not be deleted.')) return;
     clearPracticeHistory();
     setActivities([]);
+  };
+
+  const openActivity = (activity) => {
+    if (activity.mode === 'interview' && activity.referenceId) {
+      void navigate({ to: '/interview', search: { report: activity.referenceId } });
+      return;
+    }
+    void navigate({ to: MODE_PATHS[activity.mode] || '/' });
   };
 
   return (
@@ -53,6 +72,23 @@ export function HistoryRoute() {
             </div>
           ))}
         </div>
+        {activities.length > 0 ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[20px] bg-slate-950 p-4 text-white">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Active days</p>
+              <p className="mt-2 text-2xl font-semibold">{insights.activeDays}</p>
+            </div>
+            <div className="rounded-[20px] border border-slate-200 bg-white/75 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Last 7 days</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">{insights.recentCount}</p>
+              <p className="mt-1 text-xs text-slate-500">{insights.recentDelta >= 0 ? '+' : ''}{insights.recentDelta} vs prior week</p>
+            </div>
+            <div className="rounded-[20px] border border-slate-200 bg-white/75 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Most practiced</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">{MODE_LABELS[insights.mostPracticedMode] || '—'}</p>
+            </div>
+          </div>
+        ) : null}
       </MagicCard>
 
       {activities.length === 0 ? (
@@ -68,8 +104,22 @@ export function HistoryRoute() {
             <h2 className="text-xl font-semibold text-slate-950">Recent activity</h2>
             <MagicButton variant="ghost" onClick={handleClear}><Trash size={17} /> Clear index</MagicButton>
           </div>
+          <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <label className="relative block flex-1">
+              <span className="sr-only">Search practice history</span>
+              <MagnifyingGlass size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <MagicInput className="pl-11" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles and coaching notes" />
+            </label>
+            <div className="flex flex-wrap gap-2" aria-label="Filter practice history by mode">
+              {['all', ...Object.keys(MODE_LABELS)].map((mode) => (
+                <MagicButton key={mode} variant={modeFilter === mode ? 'primary' : 'secondary'} className="!min-h-10 !px-4 !py-2" onClick={() => setModeFilter(mode)}>
+                  {mode === 'all' ? 'All' : MODE_LABELS[mode]}
+                </MagicButton>
+              ))}
+            </div>
+          </div>
           <div className="mt-5 space-y-3">
-            {activities.map((activity) => (
+            {filteredActivities.map((activity) => (
               <article key={activity.id} className="flex flex-col gap-4 rounded-[22px] border border-slate-200 bg-white/75 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -79,11 +129,14 @@ export function HistoryRoute() {
                   <h3 className="mt-3 truncate font-semibold text-slate-950">{activity.title || 'Practice session'}</h3>
                   <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{activity.summary || 'Completed practice activity.'}</p>
                 </div>
-                <MagicButton variant="secondary" onClick={() => navigate({ to: MODE_PATHS[activity.mode] || '/' })}>
+                <MagicButton variant="secondary" onClick={() => openActivity(activity)}>
                   {activity.actionLabel || 'Open mode'} <ArrowRight size={17} />
                 </MagicButton>
               </article>
             ))}
+            {filteredActivities.length === 0 ? (
+              <div className="rounded-[20px] border border-dashed border-slate-200 px-5 py-8 text-center text-sm text-slate-500">No activities match this filter.</div>
+            ) : null}
           </div>
         </MagicCard>
       )}
